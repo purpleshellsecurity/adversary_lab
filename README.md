@@ -99,7 +99,7 @@ Ctrl+`
 PS C:\Users\<currentuser> mkdir projects
 PS C:\Users\<currentuser> cd projects
 PS C:\Users\<currentuser> git clone https://github.com/purpleshellsecurity/adversary_lab.git
-PS C:\Users\<currentusers> cd adversary_lab
+PS C:\Users\<currentuser> cd adversary_lab
 ```
 
 <br>
