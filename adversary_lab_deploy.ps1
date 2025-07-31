@@ -131,7 +131,7 @@ param(
     # === REQUIRED PARAMETERS (will collect interactively if not provided) ===
     [Parameter(
         Mandatory = $false,
-        HelpMessage = "Enter the name for your resource group (e.g., rg-logging-lab)"
+        HelpMessage = "Enter the name for your resource group (e.g., adversarylab-rg)"
     )]
     [string]$ResourceGroupName = "",
     
@@ -170,7 +170,7 @@ param(
     
     [Parameter(
         Mandatory = $false,
-        HelpMessage = "Enter prefix for resource names (default: adversarylab - matches Bicep)"
+        HelpMessage = "Enter prefix for resource names (default: adversarylab)"
     )]
     [string]$NamePrefix = "adversarylab",
     
@@ -208,14 +208,14 @@ param(
     
     [Parameter(
         Mandatory = $false,
-        HelpMessage = "Enter shutdown time in 24-hour format HHMM (default: 2330 = 11:30 PM - matches Bicep)"
+        HelpMessage = "Enter shutdown time in 24-hour format HHMM (default: 2330 = 11:30 PM)"
     )]
     [ValidatePattern('^([01][0-9]|2[0-3])[0-5][0-9]$')]
     [string]$ShutdownTime = "2330",
     
     [Parameter(
         Mandatory = $false,
-        HelpMessage = "Enter time zone for shutdown (default: Eastern Standard Time - matches Bicep)"
+        HelpMessage = "Enter time zone for shutdown (default: Eastern Standard Time)"
     )]
     [ValidateScript({
         if ([string]::IsNullOrWhiteSpace($_)) { return $true }

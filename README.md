@@ -86,7 +86,9 @@ The lab deploys across three Azure scopes both manual and programatically:
 ```powershell
 PS C:\Users\<currentuser> winget install code
 PS C:\Users\<currentuser> winget install Git.Git
-PS C:\Users\<currentuser> Install-Module Az.Accounts, Az.Profile, Az.Resources, Az.Storage, Az.Monitor, Az.OperationalInsights, Az.Compute, Az.Network -Scope CurrentUser -Force
+PS C:\Users\<currentuser> Get-ExecutionPolicy -List
+PS C:\Users\<currentuser> Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+PS C:\Users\<currentuser> Install-Module -Name Az -Repository PSGallery -Force
 
 ```
 
