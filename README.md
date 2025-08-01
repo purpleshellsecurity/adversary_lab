@@ -84,7 +84,7 @@ The lab deploys across three Azure scopes both manual and programatically:
 
 ### 1. Install Required Software
 ```powershell
-PS C:\Users\<currentuser> winget install code
+PS C:\Users\<currentuser> winget install -e --id Microsoft.VisualStudioCode
 PS C:\Users\<currentuser> winget install Git.Git
 PS C:\Users\<currentuser> Get-ExecutionPolicy -List
 PS C:\Users\<currentuser> Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
