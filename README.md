@@ -85,7 +85,7 @@ The lab deploys across three Azure scopes both manual and programatically:
 ```powershell
 PS C:\Users\<currentuser> winget install -e --id Microsoft.VisualStudioCode   
 PS C:\Users\<currentuser> winget install Git.Git
-PS C:\Users\<currentuser> winget install -e id Microsoft.Bicep
+PS C:\Users\<currentuser> winget install -e --id Microsoft.Bicep
 PS C:\Users\<currentuser> Get-ExecutionPolicy -List
 PS C:\Users\<currentuser> Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 PS C:\Users\<currentuser> Install-Module -Name Az -Repository PSGallery -Force
