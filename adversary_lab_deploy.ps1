@@ -77,17 +77,17 @@
     Interactive deployment - will prompt for required parameters and use defaults for optional ones.
 
 .EXAMPLE
-    .\adversary_lab_deploy.ps1 -ResourceGroupName "rg-logging-lab" -Location "East US" -SubscriptionId "12345678-1234-1234-1234-123456789012" -AdminUsername "labadmin"
+    .\adversary_lab_deploy.ps1 -ResourceGroupName "adversary-lab-rg" -Location "East US" -SubscriptionId "12345678-1234-1234-1234-123456789012" -AdminUsername "labadmin"
     
     Basic deployment with required parameters. Will prompt securely for password and use defaults for optional parameters.
 
 .EXAMPLE
-    .\adversary_lab_deploy.ps1 -ResourceGroupName "rg-logging-lab" -Location "East US" -SubscriptionId "12345678-1234-1234-1234-123456789012" -AdminUsername "labadmin" -ShutdownTime "1900" -EnableShutdownNotificationEmails $true -NotificationEmail "admin@company.com"
+    .\adversary_lab_deploy.ps1 -ResourceGroupName "adversary-lab-rg" -Location "East US" -SubscriptionId "12345678-1234-1234-1234-123456789012" -AdminUsername "labadmin" -ShutdownTime "1900" -EnableShutdownNotificationEmails $true -NotificationEmail "admin@company.com"
     
     Deployment with custom shutdown time (7:00 PM) and email notifications enabled.
 
 .EXAMPLE
-    .\adversary_lab_deploy.ps1 -ResourceGroupName "rg-logging-lab" -Location "West US 2" -SubscriptionId "12345678-1234-1234-1234-123456789012" -AdminUsername "labadmin" -VmSize "Standard_D4s_v3" -RetentionInDays 90 -NamePrefix "mylab"
+    .\adversary_lab_deploy.ps1 -ResourceGroupName "adversary-lab-rg" -Location "West US 2" -SubscriptionId "12345678-1234-1234-1234-123456789012" -AdminUsername "labadmin" -VmSize "Standard_D4s_v3" -RetentionInDays 90 -NamePrefix "mylab"
     
     Deployment with larger VM size, extended log retention, and custom naming prefix.
 
@@ -314,7 +314,7 @@ function Get-InteractiveParameters {
     
     # Collect required parameters if not provided
     if ([string]::IsNullOrWhiteSpace($script:ResourceGroupName)) {
-        $script:ResourceGroupName = Read-Host "Enter Resource Group name (e.g., rg-logging-lab)"
+        $script:ResourceGroupName = Read-Host "Enter Resource Group name (e.g., adversary-lab-rg"
     }
     
     if ([string]::IsNullOrWhiteSpace($script:Location)) {

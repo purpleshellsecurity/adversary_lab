@@ -85,6 +85,7 @@ The lab deploys across three Azure scopes both manual and programatically:
 ```powershell
 PS C:\Users\<currentuser> winget install -e --id Microsoft.VisualStudioCode   
 PS C:\Users\<currentuser> winget install Git.Git
+PS C:\Users\<currentuser> winget install -e id Microsoft.Bicep
 PS C:\Users\<currentuser> Get-ExecutionPolicy -List
 PS C:\Users\<currentuser> Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 PS C:\Users\<currentuser> Install-Module -Name Az -Repository PSGallery -Force
@@ -96,7 +97,6 @@ PS C:\Users\<currentuser> Install-Module -Name Az -Repository PSGallery -Force
 ```powershell
 code
 #VSCode opens
-Ctrl+`
 PS C:\Users\<currentuser> mkdir projects
 PS C:\Users\<currentuser> cd projects
 PS C:\Users\<currentuser> git clone https://github.com/purpleshellsecurity/adversary_lab.git
@@ -112,6 +112,9 @@ PS C:\Users\<currentuser> cd adversary_lab
 
 ### 3. Basic Deployment
 ```powershell
+
+#Ensure this is in a Powershell 7 Terminal
+
 .\adversary_lab_deploy.ps1
 ```
 <br>
