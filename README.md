@@ -17,10 +17,9 @@ adversary-lab/
     ├── sentinel_deployment.bicep       # Microsoft Sentinel configuration
     └── vm_data_collection.bicep        # Data collection rules (includes Sysmon)
 └── scripts/
-    ├── create_user.ps1                 # Creates adversary_lab_deployer user
     ├── deploy_atomic_red_team.ps1      # Deploys atomic red team
     ├── deploy_stratus_red_team.ps1     # Deploys Stratus red team
-    └──deploy_sysmon.ps1                # Deploys Sysmon monitoring feature
+    └── deploy_sysmon.ps1               # Deploys Sysmon monitoring feature
 ```
 
 The Adversary Lab provides a complete security monitoring environment that includes:
