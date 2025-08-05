@@ -95,8 +95,6 @@ PS C:\Users\<currentuser> Install-Module -Name Az -Repository PSGallery -Force
 ### 2. Open VS Code Terminal Clone the Repo
 
 ```powershell
-code
-#VSCode opens
 PS C:\Users\<currentuser> mkdir projects
 PS C:\Users\<currentuser> cd projects
 PS C:\Users\<currentuser> git clone https://github.com/purpleshellsecurity/adversary_lab.git
@@ -198,11 +196,12 @@ Due to elevated permissions required, configure Entra ID logs manually:
 2. Click **Add diagnostic setting**
 3. Configure:
    - **Name**: `EntraID-AuditLogs`
-   - **Logs**: Check `AuditLogs` and `SignInLogs` `MicrosoftGraphActivityLogs` as starters (Link to Azure Monitor reference below)
+   - **Logs**: Check `AuditLogs` and `SignInLogs` `MicrosoftGraphActivityLogs` as starters (Link to Azure_Log_Reference and Azure Monitor Reference below)
    - **Destination**: Send to Log Analytics workspace
    - **Workspace**: Select your deployed workspace
 
 [Microsoft Graph Activity Logs](https://learn.microsoft.com/en-us/azure/azure-monitor/reference/tables/microsoftgraphactivitylogs)
+[Azure Log Reference](/cheatsheets/Azure_Log_Reference.md)
 
 
 ### 2. Enable Flow Logs - Azure Portal
@@ -304,7 +303,7 @@ The lab supports various security testing scenarios:
 5. **Persistence**: Registry modifications, scheduled tasks
 <br>
 
-## 🛠️ Troubleshooting
+## Troubleshooting
 
 ### Common Issues
 
@@ -331,7 +330,7 @@ The lab supports various security testing scenarios:
 
 <br>
 
-## 💰 Cost Optimization
+## Cost Optimization
 
 ### Automatic Cost Controls
 - **VM Auto-shutdown**: Default 11:30 PM daily
@@ -359,7 +358,7 @@ Typical monthly costs (East US region):
 
 <br>
 
-## 🔐 Security Considerations
+## Security Considerations
 
 ### Network Security
 - RDP access restricted to your public IP only
@@ -381,7 +380,7 @@ Typical monthly costs (East US region):
 ## Resource Cleanup 
 - All the lab resoruces are contained in resource group that can be easily deleted via the portal. 
 
-## 🤝 Contributing
+## Contributing
 
 Contributions welcome! Areas for enhancement:
 - Additional security solutions
@@ -392,7 +391,7 @@ Contributions welcome! Areas for enhancement:
 
 <br>
 
-## 📚 Additional Resources
+## Additional Resources
 
 - [Microsoft Sentinel Documentation](https://docs.microsoft.com/en-us/azure/sentinel/)
 - [Azure Monitor Agent Overview](https://docs.microsoft.com/en-us/azure/azure-monitor/agents/azure-monitor-agent-overview)
@@ -401,7 +400,7 @@ Contributions welcome! Areas for enhancement:
 
 <br>
 
-## 📄 License
+## License
 
 This project is provided as-is for educational and testing purposes. Do not deploy this within any tenant other than your own without prior authorization and written consent. 
 
