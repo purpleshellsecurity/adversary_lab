@@ -26,7 +26,6 @@ Azure Entra provides various log categories that capture identity and access man
 | **NetworkAccessConnectionEvents** | Detailed connection events and session information for network access | Network forensics, connection troubleshooting, user activity tracking, bandwidth analysis |
 | **MicrosoftServicePrincipalSignInLogs** | Microsoft first-party service principal sign-in events (Preview) | Monitor Microsoft service authentication, track system service activity, troubleshoot service connectivity |
 | **AzureADGraphActivityLogs** | Legacy Azure AD Graph API usage and activity (being deprecated) | Legacy API monitoring, migration tracking to Microsoft Graph, historical analysis |
-| **CustomSecurityAttributeAuditLogs** | Changes to custom security attributes in Microsoft Entra tenant | Monitor custom attribute modifications, compliance tracking, attribute lifecycle management |
 
 ## Azure Activity Logs (Resource/Subscription Level)
 

@@ -20,6 +20,8 @@ adversary-lab/
     ├── deploy_atomic_red_team.ps1      # Deploys atomic red team
     ├── deploy_stratus_red_team.ps1     # Deploys Stratus red team
     └── deploy_sysmon.ps1               # Deploys Sysmon monitoring feature
+└── cheatsheets/
+    └── Azure_Log_Reference             # Reference for Entra and Activity Logs 
 ```
 
 The Adversary Lab provides a complete security monitoring environment that includes:
