@@ -399,13 +399,10 @@ Contributions welcome! Areas for enhancement:
 - [Azure Monitor Agent Overview](https://docs.microsoft.com/en-us/azure/azure-monitor/agents/azure-monitor-agent-overview)
 - [KQL Query Language Reference](https://docs.microsoft.com/en-us/azure/data-explorer/kql-quick-reference)
 - [Windows Security Events Reference](https://docs.microsoft.com/en-us/windows/security/threat-protection/auditing/security-auditing-overview)
-
 <br>
 
 ## License
 
 This project is provided as-is for educational and testing purposes. Do not deploy this within any tenant other than your own without prior authorization and written consent. 
-
-
 ---
 
