@@ -100,8 +100,7 @@ PS C:\Users\<currentuser> cd adversary_lab
 ```powershell
 
 #Ensure this is in a Powershell 7 Terminal
-
-.\adversary_lab_deploy.ps1
+./adversary_lab_deploy.ps1
 ```
 <br>
 
