@@ -52,7 +52,7 @@ The lab deploys across three Azure scopes both manual and programatically:
 ## 📋 Prerequisites
 
 ### Required Software
-- **PowerShell 7 or later** - [Download here](https://learn.microsoft.com/en-us/powershell/scripting/install/installing-powershell-on-windows?view=powershell-7.5)
+- **PowerShell 7** - [Download here](https://learn.microsoft.com/en-us/powershell/scripting/install/installing-powershell-on-windows?view=powershell-7.5)
 - **Azure PowerShell Module (Az)** - Install with: `Install-Module -Name Az`
 - **VS code** - Install with `winget install code`
 
