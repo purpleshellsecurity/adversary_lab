@@ -61,18 +61,6 @@ The lab deploys across three Azure scopes both manual and programatically:
 - Ability to create resources at both **Resource Group** and **Subscription** levels
 - Valid email address for notifications (optional)
 
-<br>
-
-> [!CAUTION]
-> This lab can be deployed with the initially provisioned GA but it is recommended to create a user with the permissions above. Use the script in the scripts section of the repo to create the user.
-
-<br>
-
-> [!NOTE]  
-> In a production enviroment you would create a service principal or managed identity that would run a CI/CD pipeline. This is done this way to make the lab more accessible. 
-
-<br>
-
 ### Network Requirements
 - Public IP address for RDP access (auto-detected if not specified)
 - Outbound internet connectivity for VM updates and monitoring
@@ -90,7 +78,6 @@ PS C:\Users\<currentuser> winget install -e --id Microsoft.Bicep
 PS C:\Users\<currentuser> Get-ExecutionPolicy -List
 PS C:\Users\<currentuser> Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 PS C:\Users\<currentuser> Install-Module -Name Az -Repository PSGallery -Force
-
 ```
 
 ### 2. Open VS Code Terminal Clone the Repo
@@ -119,7 +106,7 @@ PS C:\Users\<currentuser> cd adversary_lab
 <br>
 
 > [!IMPORTANT]  
-> If you get an error "The file C:\adversary_lab_deploy.ps1 is not digitally signed. You cannot run this script on the current system. For more information about running scripts and setting execution policy, see about_Execution_Policies at https://go.microsoft.com/fwlink/?LinkID=135170." you can bypass it temporarily with the following command: pwsh -ExecutionPolicy Bypass -File .\adversary_lab_deploy.ps1
+> If you get an error "The file C:\adversary_lab_deploy.ps1 is not digitally signed. You cannot run this script on the current system. For more information about running scripts and setting execution policy, see about_Execution_Policies at https://go.microsoft.com/fwlink/?LinkID=135170." you can bypass it temporarily with the following command: powershell -ExecutionPolicy Bypass -File .\adversary_lab_deploy.ps1
 
 <br>
 
