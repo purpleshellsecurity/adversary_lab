@@ -23,14 +23,10 @@ resource dcr 'Microsoft.Insights/dataCollectionRules@2023-03-11' = {
             'Microsoft-Event'
           ]
           xPathQueries: [
-            'Security!*[System[(Level=1 or Level=2 or Level=3 or Level=4 or Level=0)]]'
-            'Application!*[System[(Level=1 or Level=2 or Level=3 or Level=4 or Level=0)]]'
-            'System!*[System[(Level=1 or Level=2 or Level=3 or Level=4 or Level=0)]]'
-            'Setup!*[System[(Level=1 or Level=2 or Level=3 or Level=4 or Level=0)]]'
-            'Microsoft-Windows-Windows Defender/Operational!*'
-            'Microsoft-Windows-PowerShell/Operational!*[System[(Level=1 or Level=2 or Level=3 or Level=4 or Level=0)]]'
-            'Microsoft-Windows-AppLocker/EXE and DLL!*'
-            'Microsoft-Windows-AppLocker/MSI and Script!*'
+            'Security!*'
+            'Microsoft-Windows-PowerShell/Operational!*'
+            'Microsoft-Windows-Windows Defender/Operational!*'  
+            'System!*[System[(Level=1 or Level=2)]]'
           ]
         }
         {

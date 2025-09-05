@@ -17,7 +17,7 @@ param namePrefix string = 'adversarylab'
 param vmSize string = 'Standard_D2s_v3'
 
 @description('Your Public IP address to allow RDP access')
-param myIP string = '' // Your Public IP address
+param myIP string = ''
 
 @description('Log Analytics workspace retention in days')
 param retentionInDays int = 30
@@ -172,7 +172,6 @@ output vmConnectCommand string = 'mstsc /v:${networking.outputs.publicIpAddress}
 
 // Cost Management Output
 output budgetCreated bool = !empty(notificationEmail)
-
 
 // Networking Outputs
 output vnetId string = networking.outputs.vnetId

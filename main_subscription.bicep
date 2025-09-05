@@ -14,6 +14,10 @@ resource rg 'Microsoft.Resources/resourceGroups@2023-07-01' existing = {
   name: resourceGroupName
 }
 
+param vmPrincipalId string
+param vmName string
+
+
 // Reference the existing Log Analytics workspace
 resource workspace 'Microsoft.OperationalInsights/workspaces@2022-10-01' existing = {
   name: workspaceName
@@ -39,6 +43,21 @@ resource activityLogDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-0
   }
 }
 
+
+// Grant VM system-assigned identity contributor access to the subscription
+resource contributorRole 'Microsoft.Authorization/roleDefinitions@2022-04-01' existing = {
+  scope: subscription()
+  name: 'b24988ac-6180-42a0-ab88-20f7382dd24c'
+}
+
+resource vmContributorAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(subscription().subscriptionId, vmName, 'contributor')
+  properties: {
+    roleDefinitionId: contributorRole.id
+    principalId: vmPrincipalId
+    principalType: 'ServicePrincipal'
+  }
+}
 
 
 // Outputs

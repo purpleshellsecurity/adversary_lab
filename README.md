@@ -17,9 +17,9 @@ adversary-lab/
     ├── sentinel_deployment.bicep       # Microsoft Sentinel configuration
     └── vm_data_collection.bicep        # Data collection rules (includes Sysmon)
 └── scripts/
-    ├── deploy_atomic_red_team.ps1      # Deploys atomic red team
-    ├── deploy_stratus_red_team.ps1     # Deploys Stratus red team
-    └── deploy_sysmon.ps1               # Deploys Sysmon monitoring feature
+    ├── Enable-PSLogging.ps1            # Enables PS Logging
+    ├── Install-Stratus.ps1             # Installs Stratus Red Team
+    └── Install-Sysmon.ps1              # Installs Sysmon Monitoring
 └── cheatsheets/
     └── Azure_Log_Reference             # Reference for Entra and Activity Logs 
 ```
@@ -33,7 +33,6 @@ The Adversary Lab provides a complete security monitoring environment that inclu
 - **Azure Activity Logs** Deployed for monitoring tenant management activity
 - **Network Security Groups** with controlled access
 - **Stratus Red Team** for cloud attack simulation and detection testing
-- **Atomic Red Team** for MITRE ATT&CK technique testing
 - **Sysmon** for advanced Windows event logging
 
 ## Architecture
@@ -124,34 +123,6 @@ PS C:\Users\<currentuser> cd adversary_lab
 
 <br>
 
-
-## ⚙️ Configuration Reference
-
-### Parameter Reference Table (Advanced Usage)
-
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| `ResourceGroupName` | String | 🔄 | *interactive* | Name of the resource group to deploy resources |
-| `Location` | String | 🔄 | *interactive* | Azure region (e.g., "East US", "West US 2") |
-| `SubscriptionId` | String | 🔄 | *interactive* | Target Azure subscription ID (GUID format) |
-| `AdminUsername` | String | 🔄 | *interactive* | VM administrator username |
-| `MyIP` | String | ❌ | Auto-detected | Your public IP for RDP access |
-| `NamePrefix` | String | ❌ | "adversarylab" | Prefix for all resource names |
-| `VmSize` | String | ❌ | "Standard_D2s_v3" | Azure VM size |
-| `RetentionInDays` | Integer | ❌ | 30 | Log Analytics retention period (7-730 days) |
-| `EnableAzureActivity` | Boolean | ❌ | true | Enable Azure Activity logs collection |
-| `ForceLogin` | Switch | ❌ | false | Force Azure re-authentication |
-| `EnableAutoShutdown` | Boolean | ❌ | true | Enable automatic VM shutdown |
-| `ShutdownTime` | String | ❌ | "2330" | Shutdown time in 24-hour format (HHMM) |
-| `ShutdownTimeZone` | String | ❌ | "Eastern Standard Time" | Timezone for shutdown |
-| `EnableShutdownNotificationEmails` | Boolean | ❌ | false | Enable email notifications before shutdown |
-| `NotificationEmail` | String | ❌ | "" | Email for shutdown and budget notifications |
-| `NotificationMinutesBefore` | Integer | ❌ | 15 | Minutes before shutdown to send notification (5-120) |
-
-*🔄 = Interactive prompt if not provided*
-
-<br>
-
 ## 📊 Deployed Components
 
 ### Core Infrastructure
@@ -224,37 +195,26 @@ Use the provided RDP command:
 mstsc /v:<VM_PUBLIC_IP>
 ```
 
-### 3. Install Sysmon, Atomic, and Stratus Red Team
+### 3. Install Sysmon, Advanced Powershell Logging, and Stratus Red Team
 
 <br>
 
 ```powershell
-# Deploy Sysmon
-./deploy_sysmon.ps1
+# Install Sysmon
+./Install-Sysmon.ps1
 ```
 <br>
 
-> [!IMPORTANT]  
-> Sysmon script may error out. Try running it again to see if there is a consistent error. 
-
+```powershell
+# Install Advanced PS Logging
+./Enable-PSLogging.ps1
+```
 <br>
 
 ```powershell
 # Deploy Stratus Red Team
 ./deploy_stratus_red_team.ps1
 ```
-<br>
-
-```powershell
-# Deploy Atomic Red Team
-./deploy_atomic_red_team.ps1
-```
-<br>
-
-> [!IMPORTANT]  
-> The script will prompt you to install Nuget (.Net Package Manager) which is needed for some tests. Ensure to install what is required. 
-
-
 <br>
 
 ### 4. Verify Data Collection

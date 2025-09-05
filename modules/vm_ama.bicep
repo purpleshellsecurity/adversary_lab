@@ -2,6 +2,7 @@ param location string
 param namePrefix string
 param adminUsername string
 
+@description('Admin password for the VM (retrieved from Key Vault by PowerShell)')
 @secure()
 param adminPassword string
 
@@ -156,8 +157,6 @@ resource amaExtension 'Microsoft.Compute/virtualMachines/extensions@2023-09-01' 
   }
 }
 
-
-
 // Outputs
 output vmName string = vm.name
 output vmResourceId string = vm.id
@@ -166,7 +165,7 @@ output nicId string = nic.id
 output computerName string = computerName
 output vmPrivateIP string = nic.properties.ipConfigurations[0].properties.privateIPAddress
 
-// Shutdown schedule output
+// Shutdown schedule outputs
 output shutdownScheduleEnabled bool = enableAutoShutdown
 output shutdownTime string = enableAutoShutdown ? shutdownTime : 'Not configured'
 output shutdownTimeZone string = enableAutoShutdown ? shutdownTimeZone : 'Not configured'
