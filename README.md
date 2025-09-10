@@ -203,7 +203,7 @@ mstsc /v:<VM_PUBLIC_IP>
 
 ```powershell
 # Deploy Stratus Red Team
-./deploy_stratus_red_team.ps1
+./Install-Stratus.ps1
 ```
 <br>
 
