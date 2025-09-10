@@ -72,6 +72,10 @@ The lab deploys across three Azure scopes both manual and programatically:
 
 ### 1. Install Required Software
 ```powershell
+#Install Powershell 7
+PS C:\Users\<currentuser> winget install --id Microsoft.PowerShell --source winget
+
+#From Powershell 7
 PS C:\Users\<currentuser> winget install -e --id Microsoft.VisualStudioCode   
 PS C:\Users\<currentuser> winget install Git.Git
 PS C:\Users\<currentuser> winget install -e --id Microsoft.Bicep
