@@ -14,7 +14,7 @@ param adminPassword string
 param namePrefix string = 'adversarylab'
 
 @description('VM size')
-param vmSize string = 'Standard_D2s_v3'
+param vmSize string = 'Standard_D2s_v4'
 
 @description('Your Public IP address to allow RDP access')
 param myIP string = ''
