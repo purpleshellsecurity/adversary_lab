@@ -17,7 +17,7 @@ param(
     [string]$AdminPassword = "",
     [string]$MyIP = "",
     [string]$namePrefix = "adversarylab",
-    [string]$VmSize = "Standard_D2s_v3",
+    [string]$VmSize = "Standard_D2s_v4",
     [int]$RetentionInDays = 30,
     [bool]$EnableAzureActivity = $true,
     [switch]$ForceLogin,
