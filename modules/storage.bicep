@@ -1,4 +1,6 @@
-// modules/storage.bicep - Simple storage account for flow logs
+// Layer 1: Foundation - Storage
+// No dependencies on other modules
+
 @description('Location for all resources')
 param location string
 
@@ -8,7 +10,6 @@ param namePrefix string
 @description('Storage account SKU')
 param storageAccountSku string = 'Standard_LRS'
 
-// Variables
 var storageAccountName = '${take(toLower(namePrefix), 10)}fl${substring(uniqueString(resourceGroup().id), 0, 8)}'
 
 // Storage Account for Flow Logs

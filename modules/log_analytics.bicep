@@ -1,3 +1,6 @@
+// Layer 1: Foundation - Log Analytics Workspace
+// No dependencies on other modules
+
 param location string
 param namePrefix string
 param retentionInDays int = 30

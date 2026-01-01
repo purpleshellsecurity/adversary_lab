@@ -1,5 +1,9 @@
 targetScope = 'resourceGroup'
 
+// ============================================================================
+// PARAMETERS
+// ============================================================================
+
 @description('Location for all resources')
 param location string = resourceGroup().location
 
@@ -43,15 +47,19 @@ param notificationMinutesBefore int = 15
 @description('Start date for the budget (defaults to first day of current month)')
 param budgetStartDate string = format('{0}-{1:D2}-01', utcNow('yyyy'), int(utcNow('MM')))
 
-// Generate unique suffix for resource names
+// ============================================================================
+// VARIABLES
+// ============================================================================
+
 var resourceSuffix = substring(uniqueString(resourceGroup().id, deployment().name), 0, 3)
 var uniqueNamePrefix = '${namePrefix}${resourceSuffix}'
 
-// ===== INFRASTRUCTURE LAYER =====
+// ============================================================================
+// LAYER 1: FOUNDATION (no inter-dependencies)
+// ============================================================================
 
-// Deploy networking infrastructure
 module networking 'modules/networking.bicep' = {
-  name: 'networking-deployment-${resourceSuffix}'
+  name: 'networking-${resourceSuffix}'
   params: {
     location: location
     namePrefix: uniqueNamePrefix
@@ -59,18 +67,29 @@ module networking 'modules/networking.bicep' = {
   }
 }
 
-// Deploy storage account for flow logs
 module storage 'modules/storage.bicep' = {
-  name: 'storage-deployment-${resourceSuffix}'
+  name: 'storage-${resourceSuffix}'
   params: {
     location: location
     namePrefix: uniqueNamePrefix
   }
 }
 
-// Deploy the VM with AMA
-module vm 'modules/vm_ama.bicep' = {
-  name: 'vm-deployment-${resourceSuffix}'
+module logAnalytics 'modules/log_analytics.bicep' = {
+  name: 'log-analytics-${resourceSuffix}'
+  params: {
+    location: location
+    namePrefix: uniqueNamePrefix
+    retentionInDays: retentionInDays
+  }
+}
+
+// ============================================================================
+// LAYER 2: COMPUTE (depends on Layer 1)
+// ============================================================================
+
+module vm 'modules/vm.bicep' = {
+  name: 'vm-${resourceSuffix}'
   params: {
     location: location
     namePrefix: uniqueNamePrefix
@@ -79,8 +98,6 @@ module vm 'modules/vm_ama.bicep' = {
     vmSize: vmSize
     subnetId: networking.outputs.subnetId
     publicIpId: networking.outputs.publicIpId
-    
-    // Auto-shutdown parameters
     enableAutoShutdown: enableAutoShutdown
     shutdownTime: shutdownTime
     shutdownTimeZone: shutdownTimeZone
@@ -90,38 +107,34 @@ module vm 'modules/vm_ama.bicep' = {
   }
 }
 
-// ===== MONITORING LAYER =====
+// ============================================================================
+// LAYER 3: MONITORING (depends on Layer 1 + Layer 2)
+// ============================================================================
 
-// Layer 1: Log Analytics Workspace
-module logAnalytics 'modules/log_analytics.bicep' = {
-  name: 'log-analytics-deployment-${resourceSuffix}'
-  params: {
-    location: location
-    namePrefix: uniqueNamePrefix
-    retentionInDays: retentionInDays
-  }
-}
-
-// Layer 2: Sentinel Deployment
-module sentinelDeployment 'modules/sentinel_deployment.bicep' = {
-  name: 'sentinel-deployment-${resourceSuffix}'
+module sentinel 'modules/sentinel.bicep' = {
+  name: 'sentinel-${resourceSuffix}'
   params: {
     workspaceName: logAnalytics.outputs.workspaceName
   }
 }
 
-// Layer 3: Data Collection from VM
-module dataCollection 'modules/vm_data_collection.bicep' = {
-  name: 'data-collection-deployment-${resourceSuffix}'
+module vmMonitoring 'modules/vm_monitoring.bicep' = {
+  name: 'vm-monitoring-${resourceSuffix}'
   params: {
     location: location
     namePrefix: uniqueNamePrefix
-    workspaceResourceId: logAnalytics.outputs.workspaceResourceId
     vmResourceId: vm.outputs.vmResourceId
+    workspaceResourceId: logAnalytics.outputs.workspaceResourceId
   }
 }
 
-// Layer 4: Cost Management
+// Note: Network monitoring is deployed separately via PowerShell as it requires subscription scope
+// to deploy into NetworkWatcherRG. See adversary_lab_deploy.ps1
+
+// ============================================================================
+// LAYER 4: COST MANAGEMENT
+// ============================================================================
+
 resource budgetAlert 'Microsoft.Consumption/budgets@2023-05-01' = if (!empty(notificationEmail)) {
   name: '${uniqueNamePrefix}-dev-budget'
   scope: resourceGroup()
@@ -130,7 +143,7 @@ resource budgetAlert 'Microsoft.Consumption/budgets@2023-05-01' = if (!empty(not
     timePeriod: {
       startDate: budgetStartDate
     }
-    amount: 50  // $50/month budget for dev environment
+    amount: 50
     category: 'Cost'
     notifications: {
       Actual: {
@@ -138,28 +151,37 @@ resource budgetAlert 'Microsoft.Consumption/budgets@2023-05-01' = if (!empty(not
         operator: 'GreaterThan'
         threshold: 80
         contactEmails: [
-          notificationEmail // Email for budget alerts
+          notificationEmail
         ]
-      }  
+      }
     }
   }
 }
 
-// ===== OUTPUTS =====
+// ============================================================================
+// OUTPUTS
+// ============================================================================
 
-// Infrastructure Outputs
+// Infrastructure
 output vmName string = vm.outputs.vmName
 output vmPublicIP string = networking.outputs.publicIpAddress
 output vmResourceId string = vm.outputs.vmResourceId
 output uniqueNamePrefix string = uniqueNamePrefix
 
-// Monitoring Outputs
+// Networking
+output vnetId string = networking.outputs.vnetId
+output vnetResourceId string = networking.outputs.vnetResourceId
+output vnetName string = networking.outputs.vnetName
+
+// Monitoring
 output workspaceName string = logAnalytics.outputs.workspaceName
 output workspaceId string = logAnalytics.outputs.workspaceId
 output workspaceResourceId string = logAnalytics.outputs.workspaceResourceId
-output dcrId string = dataCollection.outputs.dcrId
+output dcrId string = vmMonitoring.outputs.dcrId
 
-// Storage Outputs
+// Note: flowLogId is output from the subscription-level deployment
+
+// Storage
 output storageAccountName string = storage.outputs.storageAccountName
 output storageAccountResourceId string = storage.outputs.storageAccountResourceId
 
@@ -170,10 +192,5 @@ output resourceGroupName string = resourceGroup().name
 output sentinelUrl string = 'https://portal.azure.com/#@${subscription().tenantId}/resource${logAnalytics.outputs.workspaceResourceId}/overview'
 output vmConnectCommand string = 'mstsc /v:${networking.outputs.publicIpAddress}'
 
-// Cost Management Output
+// Cost Management
 output budgetCreated bool = !empty(notificationEmail)
-
-// Networking Outputs
-output vnetId string = networking.outputs.vnetId
-output vnetResourceId string = networking.outputs.vnetResourceId
-output vnetName string = networking.outputs.vnetName

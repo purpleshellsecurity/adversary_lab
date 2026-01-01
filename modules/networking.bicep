@@ -1,3 +1,6 @@
+// Layer 1: Foundation - Networking
+// No dependencies on other modules
+
 @description('Location for all resources')
 param location string
 
@@ -7,7 +10,6 @@ param namePrefix string
 @description('Your Public IP address to allow RDP access')
 param myIP string
 
-// Variables
 var vnetName = '${namePrefix}-vnet'
 var subnetName = '${namePrefix}-subnet'
 var nsgName = '${namePrefix}-nsg'
@@ -77,7 +79,7 @@ output subnetId string = '${vnet.id}/subnets/${subnetName}'
 output publicIpId string = pip.id
 output publicIpAddress string = pip.properties.ipAddress
 output vnetId string = vnet.id
-output nsgId string = nsg.id
-output vnetResourceId string = vnet.id
 output vnetName string = vnet.name
-
+output vnetResourceId string = vnet.id
+output nsgId string = nsg.id
+output nsgName string = nsg.name
