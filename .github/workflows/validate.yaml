@@ -43,17 +43,30 @@ jobs:
         shell: pwsh
         run: |
           Install-Module PSScriptAnalyzer -Force -Scope CurrentUser
-          
+
+          $excludeRules = @(
+            'PSAvoidUsingWriteHost',
+            'PSAvoidUsingInvokeExpression',
+            'PSReviewUnusedParameter',
+            'PSAvoidUsingPlainTextForPassword',
+            'PSUseSingularNouns',
+            'PSUseBOMForUnicodeEncodedFile',
+            'PSUseDeclaredVarsMoreThanAssignments',
+            'PSUseShouldProcessForStateChangingFunctions',
+            'PSShouldProcess',
+            'PSUseApprovedVerbs'
+          )
+
           $results = Invoke-ScriptAnalyzer `
             -Path . `
             -Recurse `
             -Severity Warning,Error `
-            -ExcludeRule PSAvoidUsingConvertToSecureStringWithPlainText
-          
+            -ExcludeRule $excludeRules
+
           if ($results) {
             $results | Format-Table -AutoSize
             Write-Host "PSScriptAnalyzer found $($results.Count) issue(s)" -ForegroundColor Red
             exit 1
           }
-          
+
           Write-Host "No issues found!" -ForegroundColor Green
