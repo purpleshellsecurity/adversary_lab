@@ -49,6 +49,7 @@ jobs:
             'PSAvoidUsingInvokeExpression',
             'PSReviewUnusedParameter',
             'PSAvoidUsingPlainTextForPassword',
+            'PSAvoidUsingConvertToSecureStringWithPlainText',
             'PSUseSingularNouns',
             'PSUseBOMForUnicodeEncodedFile',
             'PSUseDeclaredVarsMoreThanAssignments',

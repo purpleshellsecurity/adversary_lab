@@ -142,9 +142,6 @@ function Get-InteractiveParameters {
             # Suppressed: ConvertTo-SecureString with plain text is unavoidable here
             # as we must generate the password as a string before securing it.
             # Plain text is cleared from memory immediately after conversion.
-            [Diagnostics.CodeAnalysis.SuppressMessageAttribute(
-                'PSAvoidUsingConvertToSecureStringWithPlainText', ''
-            )]
             $AdminPassword = ConvertTo-SecureString $plainPassword -AsPlainText -Force
             $plainPassword = $null  # Clear plain text from memory immediately
             Write-Host "Password generated. It will be saved to a credentials file after deployment." -ForegroundColor Yellow
