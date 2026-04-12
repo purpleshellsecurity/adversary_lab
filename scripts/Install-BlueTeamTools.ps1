@@ -121,11 +121,11 @@ function Test-Administrator {
 
 function Test-SysmonRunning {
     $service = Get-Service -Name 'Sysmon*' -ErrorAction SilentlyContinue
-    return $service -and $service.Status -eq 'Running'
+    return $null -ne $service -and $service.Status -eq 'Running'
 }
 
 function Test-SysmonInstalled {
-    return (Get-Service -Name 'Sysmon*' -ErrorAction SilentlyContinue) -ne $null
+    return $null -ne (Get-Service -Name 'Sysmon*' -ErrorAction SilentlyContinue)
 }
 
 function Install-SysmonBinary {
@@ -144,7 +144,7 @@ function Install-SysmonBinary {
         Expand-Archive -Path $tempZip -DestinationPath $tempExtract -Force
         
         $sysmonExe = Get-ChildItem -Path $tempExtract -Name "Sysmon64.exe" -Recurse | Select-Object -First 1
-        if (-not $sysmonExe) { 
+        if ($null -eq $sysmonExe) { 
             throw "Sysmon64.exe not found in download" 
         }
         
@@ -170,7 +170,6 @@ function Get-SysmonConfig {
         $ProgressPreference = 'SilentlyContinue'
         Invoke-WebRequest -Uri $SysmonConfigUrl -OutFile $configPath -UseBasicParsing -TimeoutSec 30
         
-        # Validate XML
         $null = [xml](Get-Content $configPath)
         Write-Status "Configuration downloaded (SwiftOnSecurity)" -Type Success
         return $configPath
@@ -217,26 +216,21 @@ function Install-SysmonService {
 function Install-Sysmon {
     Write-Section "Installing Sysmon..."
     
-    # Check if already running
     if (Test-SysmonRunning -and -not $Force) {
         Write-Status "Sysmon is already running (use -Force to reinstall)" -Type Success
         return
     }
     
-    # Download binary if needed
     if (-not (Test-Path $SysmonPath) -or $Force) {
         Install-SysmonBinary
     } else {
         Write-Status "Sysmon binary already present" -Type Info
     }
     
-    # Get configuration
     $configPath = Get-SysmonConfig
     
-    # Install service
     Install-SysmonService -ConfigPath $configPath
     
-    # Verify
     Start-Sleep -Seconds 2
     if (Test-SysmonRunning) {
         Write-Status "Sysmon is running and logging events" -Type Success
@@ -245,8 +239,7 @@ function Install-Sysmon {
         Write-Status "Sysmon may not be running - check services" -Type Warning
     }
     
-    # Clean up config file
-    if ($configPath) {
+    if ($null -ne $configPath) {
         Remove-Item $configPath -Force -ErrorAction SilentlyContinue
     }
 }
@@ -259,7 +252,6 @@ function Enable-PSLogging {
     Write-Section "Enabling PowerShell Logging..."
     
     try {
-        # Script Block Logging
         $scriptBlockPath = "HKLM:\Software\Policies\Microsoft\Windows\PowerShell\ScriptBlockLogging"
         if (-not (Test-Path $scriptBlockPath)) {
             New-Item -Path $scriptBlockPath -Force | Out-Null
@@ -267,7 +259,6 @@ function Enable-PSLogging {
         Set-ItemProperty -Path $scriptBlockPath -Name "EnableScriptBlockLogging" -Value 1 -Type DWord
         Write-Status "Script Block Logging enabled" -Type Success
         
-        # Module Logging
         $moduleLogPath = "HKLM:\Software\Policies\Microsoft\Windows\PowerShell\ModuleLogging"
         $moduleNamesPath = "$moduleLogPath\ModuleNames"
         
@@ -279,12 +270,9 @@ function Enable-PSLogging {
         }
         
         Set-ItemProperty -Path $moduleLogPath -Name "EnableModuleLogging" -Value 1 -Type DWord
-        
-        # Log all modules with wildcard
         Set-ItemProperty -Path $moduleNamesPath -Name "*" -Value "*" -Type String
         Write-Status "Module Logging enabled (all modules)" -Type Success
         
-        # Transcription (optional but useful)
         $transcriptPath = "HKLM:\Software\Policies\Microsoft\Windows\PowerShell\Transcription"
         if (-not (Test-Path $transcriptPath)) {
             New-Item -Path $transcriptPath -Force | Out-Null
@@ -292,7 +280,6 @@ function Enable-PSLogging {
         Set-ItemProperty -Path $transcriptPath -Name "EnableTranscripting" -Value 1 -Type DWord
         Set-ItemProperty -Path $transcriptPath -Name "EnableInvocationHeader" -Value 1 -Type DWord
         
-        # Create transcript output directory
         $transcriptDir = "C:\PSTranscripts"
         if (-not (Test-Path $transcriptDir)) {
             New-Item -Path $transcriptDir -ItemType Directory -Force | Out-Null
@@ -316,11 +303,9 @@ function Enable-AuditPolicies {
     Write-Section "Enabling Windows Audit Policies..."
     
     try {
-        # Process Creation (Event ID 4688)
         auditpol /set /subcategory:"Process Creation" /success:enable /failure:enable | Out-Null
         Write-Status "Process Creation auditing enabled (4688)" -Type Success
         
-        # Include command line in process creation events
         $cmdLinePath = "HKLM:\Software\Microsoft\Windows\CurrentVersion\Policies\System\Audit"
         if (-not (Test-Path $cmdLinePath)) {
             New-Item -Path $cmdLinePath -Force | Out-Null
@@ -328,28 +313,19 @@ function Enable-AuditPolicies {
         Set-ItemProperty -Path $cmdLinePath -Name "ProcessCreationIncludeCmdLine_Enabled" -Value 1 -Type DWord
         Write-Status "Command line logging for process creation enabled" -Type Success
         
-        # Logon/Logoff
         auditpol /set /subcategory:"Logon" /success:enable /failure:enable | Out-Null
         auditpol /set /subcategory:"Logoff" /success:enable | Out-Null
         Write-Status "Logon/Logoff auditing enabled (4624, 4625, 4634)" -Type Success
         
-        # Account Logon
         auditpol /set /subcategory:"Credential Validation" /success:enable /failure:enable | Out-Null
         Write-Status "Credential Validation auditing enabled (4776)" -Type Success
         
-        # Privilege Use
         auditpol /set /subcategory:"Sensitive Privilege Use" /success:enable /failure:enable | Out-Null
         Write-Status "Sensitive Privilege Use auditing enabled (4672, 4673)" -Type Success
         
-        # Object Access - Registry & File System (can be noisy, enable selectively)
-        # auditpol /set /subcategory:"Registry" /success:enable /failure:enable | Out-Null
-        # auditpol /set /subcategory:"File System" /success:enable /failure:enable | Out-Null
-        
-        # Security Group Management
         auditpol /set /subcategory:"Security Group Management" /success:enable /failure:enable | Out-Null
         Write-Status "Security Group Management auditing enabled (4727, 4728, 4732)" -Type Success
         
-        # User Account Management
         auditpol /set /subcategory:"User Account Management" /success:enable /failure:enable | Out-Null
         Write-Status "User Account Management auditing enabled (4720, 4722, 4724)" -Type Success
         
@@ -399,12 +375,10 @@ function Show-Summary {
 # Main
 # ============================================================================
 
-# Determine what to install
 $installSysmon = $Sysmon -or $All
 $installPSLogging = $PSLogging -or $All
 $installAuditPolicies = $AuditPolicies -or $All
 
-# If nothing specified, install all
 if (-not ($Sysmon -or $PSLogging -or $AuditPolicies -or $All)) {
     $installSysmon = $true
     $installPSLogging = $true
@@ -416,10 +390,8 @@ Write-Host "============================================================" -Foreg
 Write-Host " Blue Team Tools Installer" -ForegroundColor Cyan
 Write-Host "============================================================" -ForegroundColor Cyan
 
-# Check admin
 Test-Administrator
 
-# Confirm
 Write-Host ""
 Write-Host "  Components to install:" -ForegroundColor White
 if ($installSysmon) { Write-Host "    - Sysmon (System Monitor)" -ForegroundColor Gray }
@@ -433,7 +405,6 @@ if ($confirm -match '^[Nn]') {
     exit 0
 }
 
-# Install components
 try {
     if ($installSysmon) { Install-Sysmon }
     if ($installPSLogging) { Enable-PSLogging }

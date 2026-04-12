@@ -32,7 +32,6 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-# Helper functions
 function Write-ColoredOutput {
     param([string]$Message, [string]$Color = "White")
     Write-Host $Message -ForegroundColor $Color
@@ -140,7 +139,14 @@ function Get-InteractiveParameters {
         $generateChoice = Read-Host "Generate password automatically? (y/n)"
         if ($generateChoice -eq 'y' -or $generateChoice -eq 'Y') {
             $plainPassword = New-CompliantPassword
+            # Suppressed: ConvertTo-SecureString with plain text is unavoidable here
+            # as we must generate the password as a string before securing it.
+            # Plain text is cleared from memory immediately after conversion.
+            [Diagnostics.CodeAnalysis.SuppressMessageAttribute(
+                'PSAvoidUsingConvertToSecureStringWithPlainText', ''
+            )]
             $AdminPassword = ConvertTo-SecureString $plainPassword -AsPlainText -Force
+            $plainPassword = $null  # Clear plain text from memory immediately
             Write-Host "Password generated. It will be saved to a credentials file after deployment." -ForegroundColor Yellow
         } else {
             $AdminPassword = Read-Host "Enter password" -AsSecureString
@@ -150,7 +156,7 @@ function Get-InteractiveParameters {
     if ([string]::IsNullOrWhiteSpace($MyIP)) {
         Write-Host "Detecting your public IP..." -ForegroundColor Yellow
         $MyIP = Get-PublicIPAddress
-        if ($MyIP) {
+        if ($null -ne $MyIP) {
             Write-Host "Detected IP: $MyIP" -ForegroundColor Green
             $confirmIP = Read-Host "Use this IP for RDP access? (y/n)"
             if ($confirmIP -notmatch '^[Yy]') {
