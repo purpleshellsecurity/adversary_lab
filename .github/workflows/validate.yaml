@@ -1,0 +1,33 @@
+name: Validate Bicep Templates
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  bicep-validate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Bicep
+        run: |
+          az bicep install
+          az bicep version
+
+      - name: Validate main.bicep
+        run: az bicep build --file main.bicep
+
+      - name: Validate main_subscription.bicep
+        run: az bicep build --file main_subscription.bicep
+
+      - name: Validate all modules
+        run: |
+          for f in modules/*.bicep; do
+            echo "Checking $f..."
+            az bicep build --file "$f"
+          done
