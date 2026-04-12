@@ -14,7 +14,7 @@ param(
     [string]$Location = "",
     [string]$SubscriptionId = "",
     [string]$AdminUsername = "",
-    [string]$AdminPassword = "",
+    [SecureString]$AdminPassword = $null,
     [string]$MyIP = "",
     [string]$namePrefix = "adversarylab",
     [string]$VmSize = "Standard_D2s_v4",
@@ -85,11 +85,16 @@ function New-CompliantPassword {
 function Save-CredentialsToFile {
     param(
         [string]$AdminUsername,
-        [string]$AdminPassword,
+        [SecureString]$AdminPassword,
         [string]$VmPublicIP,
         [string]$OutputPath
     )
     
+    # Decrypt SecureString just for writing to file
+    $plainTextPassword = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto(
+        [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($AdminPassword)
+    )
+
     $credFile = Join-Path $OutputPath "credentials.txt"
     $content = @"
 ========================================
@@ -99,7 +104,7 @@ Generated: $(Get-Date -Format "yyyy-MM-dd HH:mm:ss")
 
 VM Public IP: $VmPublicIP
 Admin Username: $AdminUsername
-Admin Password: $AdminPassword
+Admin Password: $plainTextPassword
 
 RDP Command: mstsc /v:$VmPublicIP
 
@@ -131,13 +136,14 @@ function Get-InteractiveParameters {
         $AdminUsername = Read-Host "Enter VM administrator username"
     }
     
-    if ([string]::IsNullOrWhiteSpace($AdminPassword)) {
+    if ($null -eq $AdminPassword -or $AdminPassword.Length -eq 0) {
         $generateChoice = Read-Host "Generate password automatically? (y/n)"
         if ($generateChoice -eq 'y' -or $generateChoice -eq 'Y') {
-            $AdminPassword = New-CompliantPassword
+            $plainPassword = New-CompliantPassword
+            $AdminPassword = ConvertTo-SecureString $plainPassword -AsPlainText -Force
             Write-Host "Password generated. It will be saved to a credentials file after deployment." -ForegroundColor Yellow
         } else {
-            $AdminPassword = Read-Host "Enter password"
+            $AdminPassword = Read-Host "Enter password" -AsSecureString
         }
     }
     
@@ -178,23 +184,23 @@ function Get-InteractiveParameters {
     }
     
     return @{
-        ResourceGroupName = $ResourceGroupName
-        Location = $Location
-        SubscriptionId = $SubscriptionId
-        AdminUsername = $AdminUsername
-        AdminPassword = $AdminPassword
-        MyIP = $MyIP
-        namePrefix = $namePrefix
-        VmSize = $VmSize
-        RetentionInDays = $RetentionInDays
-        EnableAzureActivity = $EnableAzureActivity
-        EnableAutoShutdown = $EnableAutoShutdown
-        ShutdownTime = $ShutdownTime
-        ShutdownTimeZone = $ShutdownTimeZone
+        ResourceGroupName                = $ResourceGroupName
+        Location                         = $Location
+        SubscriptionId                   = $SubscriptionId
+        AdminUsername                    = $AdminUsername
+        AdminPassword                    = $AdminPassword
+        MyIP                             = $MyIP
+        namePrefix                       = $namePrefix
+        VmSize                           = $VmSize
+        RetentionInDays                  = $RetentionInDays
+        EnableAzureActivity              = $EnableAzureActivity
+        EnableAutoShutdown               = $EnableAutoShutdown
+        ShutdownTime                     = $ShutdownTime
+        ShutdownTimeZone                 = $ShutdownTimeZone
         EnableShutdownNotificationEmails = $EnableShutdownNotificationEmails
-        NotificationEmail = $NotificationEmail
-        NotificationMinutesBefore = $NotificationMinutesBefore
-        EnableFlowLogs = $EnableFlowLogs
+        NotificationEmail                = $NotificationEmail
+        NotificationMinutesBefore        = $NotificationMinutesBefore
+        EnableFlowLogs                   = $EnableFlowLogs
     }
 }
 
@@ -237,14 +243,12 @@ function Test-NetworkWatcher {
     $networkWatcherRG = "NetworkWatcherRG"
     $networkWatcherName = "NetworkWatcher_$Location"
     
-    # Check if NetworkWatcherRG exists
     $nwRG = Get-AzResourceGroup -Name $networkWatcherRG -ErrorAction SilentlyContinue
     if ($null -eq $nwRG) {
         Write-ColoredOutput "Creating NetworkWatcherRG resource group..." "Yellow"
         New-AzResourceGroup -Name $networkWatcherRG -Location $Location | Out-Null
     }
     
-    # Check if Network Watcher exists in the region
     $nw = Get-AzNetworkWatcher -Name $networkWatcherName -ResourceGroupName $networkWatcherRG -ErrorAction SilentlyContinue
     if ($null -eq $nw) {
         Write-ColoredOutput "Creating Network Watcher in $Location..." "Yellow"
@@ -268,7 +272,6 @@ try {
     Initialize-AzureContext -SubscriptionId $params.SubscriptionId
     Test-AzurePermissions -ResourceGroupName $params.ResourceGroupName -Location $params.Location
     
-    # Ensure Network Watcher exists if flow logs are enabled
     if ($params.EnableFlowLogs) {
         Test-NetworkWatcher -Location $params.Location
     }
@@ -287,24 +290,22 @@ try {
     
     Write-ColoredOutput "Deploying main infrastructure..." "Yellow"
     
-    $securePassword = ConvertTo-SecureString $params.AdminPassword -AsPlainText -Force
-    
     $deploymentParams = @{
-        ResourceGroupName = $params.ResourceGroupName
-        TemplateFile = $mainTemplate
-        namePrefix = $params.namePrefix
-        location = $params.Location
-        adminUsername = $params.AdminUsername
-        adminPassword = $securePassword
-        myIP = $params.MyIP
-        vmSize = $params.VmSize
-        retentionInDays = $params.RetentionInDays
-        enableAutoShutdown = $params.EnableAutoShutdown
-        shutdownTime = $params.ShutdownTime
-        shutdownTimeZone = $params.ShutdownTimeZone
+        ResourceGroupName                = $params.ResourceGroupName
+        TemplateFile                     = $mainTemplate
+        namePrefix                       = $params.namePrefix
+        location                         = $params.Location
+        adminUsername                    = $params.AdminUsername
+        adminPassword                    = $params.AdminPassword
+        myIP                             = $params.MyIP
+        vmSize                           = $params.VmSize
+        retentionInDays                  = $params.RetentionInDays
+        enableAutoShutdown               = $params.EnableAutoShutdown
+        shutdownTime                     = $params.ShutdownTime
+        shutdownTimeZone                 = $params.ShutdownTimeZone
         enableShutdownNotificationEmails = $params.EnableShutdownNotificationEmails
-        notificationEmail = $params.NotificationEmail
-        notificationMinutesBefore = $params.NotificationMinutesBefore
+        notificationEmail                = $params.NotificationEmail
+        notificationMinutesBefore        = $params.NotificationMinutesBefore
     }
     
     $deployment = New-AzResourceGroupDeployment @deploymentParams -ErrorAction Stop
@@ -327,11 +328,11 @@ try {
         }
         
         $subTemplateParams = @{
-            resourceGroupName = $params.ResourceGroupName
-            workspaceName = $workspaceName
+            resourceGroupName   = $params.ResourceGroupName
+            workspaceName       = $workspaceName
             enableAzureActivity = $params.EnableAzureActivity
-            vmPrincipalId = $vmPrincipalId
-            vmName = $vmName
+            vmPrincipalId       = $vmPrincipalId
+            vmName              = $vmName
         }
         
         $subscriptionDeployment = New-AzSubscriptionDeployment `
@@ -342,18 +343,17 @@ try {
         Write-ColoredOutput "Activity logs deployment completed!" "Green"
     }
     
-    # Deploy VNet Flow Logs (requires subscription scope for NetworkWatcherRG)
     if ($params.EnableFlowLogs) {
         Write-ColoredOutput "Deploying VNet Flow Logs..." "Yellow"
         
         $flowLogsTemplate = Join-Path $PSScriptRoot "modules/network_monitoring.bicep"
         
         $flowLogTemplateParams = @{
-            location = $params.Location
-            vnetResourceId = $deployment.Outputs["vnetResourceId"].Value
-            storageAccountId = $deployment.Outputs["storageAccountResourceId"].Value
+            location            = $params.Location
+            vnetResourceId      = $deployment.Outputs["vnetResourceId"].Value
+            storageAccountId    = $deployment.Outputs["storageAccountResourceId"].Value
             workspaceResourceId = $deployment.Outputs["workspaceResourceId"].Value
-            retentionDays = $params.RetentionInDays
+            retentionDays       = $params.RetentionInDays
         }
         
         $flowLogDeployment = New-AzSubscriptionDeployment `
@@ -364,14 +364,12 @@ try {
         Write-ColoredOutput "VNet Flow Logs deployment completed!" "Green"
     }
     
-    # Save credentials to file
     $credFile = Save-CredentialsToFile `
         -AdminUsername $params.AdminUsername `
         -AdminPassword $params.AdminPassword `
         -VmPublicIP $deployment.Outputs["vmPublicIP"].Value `
         -OutputPath $PSScriptRoot
     
-    # Deployment summary
     Write-ColoredOutput "`n=== Deployment Summary ===" "Cyan"
     Write-ColoredOutput "✓ Resource Group: $($params.ResourceGroupName)" "Green"
     Write-ColoredOutput "✓ VM Name: $($deployment.Outputs["vmName"].Value)" "Green"
@@ -405,6 +403,5 @@ catch {
 }
 finally {
     $params = $null
-    $securePassword = $null
     [System.GC]::Collect()
 }
