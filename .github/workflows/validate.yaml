@@ -71,14 +71,13 @@ jobs:
           }
 
           Write-Host "No issues found!" -ForegroundColor Green
-secret-scan:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - name: Scan for secrets
+        uses: trufflesecurity/trufflehog@main
         with:
-          fetch-depth: 0
+          path: ./
+          base: ${{ github.event.repository.default_branch }}
+          head: HEAD
+          extra_args: --only-verified
 
       - name: Scan for secrets with TruffleHog
         uses: trufflesecurity/trufflehog@main
