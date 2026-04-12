@@ -86,7 +86,8 @@ jobs:
         with:
           path: ./
           extra_args: --only-verified
-iac-scan:
+
+  iac-scan:
     runs-on: ubuntu-latest
     needs: bicep-validate
 
