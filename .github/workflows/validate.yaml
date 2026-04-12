@@ -31,3 +31,29 @@ jobs:
             echo "Checking $f..."
             az bicep build --file "$f"
           done
+
+  powershell-lint:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run PSScriptAnalyzer
+        shell: pwsh
+        run: |
+          Install-Module PSScriptAnalyzer -Force -Scope CurrentUser
+          
+          $results = Invoke-ScriptAnalyzer `
+            -Path . `
+            -Recurse `
+            -Severity Warning,Error `
+            -ExcludeRule PSAvoidUsingConvertToSecureStringWithPlainText
+          
+          if ($results) {
+            $results | Format-Table -AutoSize
+            Write-Host "PSScriptAnalyzer found $($results.Count) issue(s)" -ForegroundColor Red
+            exit 1
+          }
+          
+          Write-Host "No issues found!" -ForegroundColor Green
