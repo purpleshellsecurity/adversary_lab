@@ -1,4 +1,4 @@
- <#
+<#
 .SYNOPSIS
     Removes Azure Red Team tools installed by Install-RedTeamTools.ps1
 
@@ -50,7 +50,7 @@ param(
 #Requires -RunAsAdministrator
 
 $ErrorActionPreference = "Continue"
-$ProgressPreference = "SilentlyContinue"  # Suppress noisy progress bars
+$ProgressPreference = "SilentlyContinue"
 
 # ============================================================================
 # Configuration - Must match Install-RedTeamTools.ps1
@@ -117,8 +117,6 @@ function Remove-PSModules {
     
     foreach ($module in $PSModules) {
         try {
-            # Special handling for Az - it's a meta-module with 70+ sub-modules
-            # and may be installed in Windows PowerShell or PowerShell 7 paths
             if ($module -eq "Az") {
                 $azModules = Get-Module -ListAvailable -Name "Az*" | Select-Object -ExpandProperty Name -Unique
                 
@@ -128,10 +126,8 @@ function Remove-PSModules {
                 }
                 
                 if ($PSCmdlet.ShouldProcess("Az (and all Az.* sub-modules)", "Uninstall PowerShell Module")) {
-                    # Remove from current session first
                     Get-Module -Name "Az*" | Remove-Module -Force -ErrorAction SilentlyContinue
                     
-                    # Try Uninstall-Module first
                     $removedCount = 0
                     $failedModules = @()
                     
@@ -141,11 +137,11 @@ function Remove-PSModules {
                             $removedCount++
                         }
                         catch {
+                            Write-Status "Non-critical error during cleanup: $($_.Exception.Message)" -Type Warning
                             $failedModules += $azMod
                         }
                     }
                     
-                    # Fallback: Remove any remaining Az modules directly from both module paths
                     $modulePaths = @(
                         "C:\Program Files\PowerShell\Modules",
                         "C:\Program Files\WindowsPowerShell\Modules",
@@ -160,7 +156,9 @@ function Remove-PSModules {
                                 Remove-Item -Path $folder.FullName -Recurse -Force -ErrorAction Stop
                                 $removedCount++
                             }
-                            catch { }
+                            catch {
+                                Write-Status "Non-critical error during cleanup: $($_.Exception.Message)" -Type Warning
+                            }
                         }
                     }
                     
@@ -172,7 +170,6 @@ function Remove-PSModules {
                 continue
             }
             
-            # Special handling for Microsoft.Graph - also has many sub-modules
             if ($module -eq "Microsoft.Graph") {
                 $graphModules = Get-Module -ListAvailable -Name "Microsoft.Graph*" | Select-Object -ExpandProperty Name -Unique
                 
@@ -190,10 +187,11 @@ function Remove-PSModules {
                             Uninstall-Module -Name $graphMod -AllVersions -Force -ErrorAction Stop
                             $removedCount++
                         }
-                        catch { }
+                        catch {
+                            Write-Status "Non-critical error during cleanup: $($_.Exception.Message)" -Type Warning
+                        }
                     }
                     
-                    # Fallback: Remove directly from module paths
                     $modulePaths = @(
                         "C:\Program Files\PowerShell\Modules",
                         "C:\Program Files\WindowsPowerShell\Modules",
@@ -208,7 +206,9 @@ function Remove-PSModules {
                                 Remove-Item -Path $folder.FullName -Recurse -Force -ErrorAction Stop
                                 $removedCount++
                             }
-                            catch { }
+                            catch {
+                                Write-Status "Non-critical error during cleanup: $($_.Exception.Message)" -Type Warning
+                            }
                         }
                     }
                     
@@ -220,10 +220,8 @@ function Remove-PSModules {
                 continue
             }
             
-            # Standard module removal
             $installed = Get-Module -ListAvailable -Name $module
             
-            # Also check for orphaned/corrupted module folders
             $modulePaths = @(
                 "C:\Program Files\PowerShell\Modules\$module",
                 "C:\Program Files\WindowsPowerShell\Modules\$module",
@@ -234,20 +232,19 @@ function Remove-PSModules {
             
             if ($installed -or $orphanedFolders) {
                 if ($PSCmdlet.ShouldProcess($module, "Uninstall PowerShell Module")) {
-                    # Remove from current session first
                     Remove-Module -Name $module -Force -ErrorAction SilentlyContinue
                     
-                    # Try Uninstall-Module if module was properly installed
                     $uninstallSuccess = $false
                     if ($installed) {
                         try {
                             Uninstall-Module -Name $module -AllVersions -Force -ErrorAction Stop
                             $uninstallSuccess = $true
                         }
-                        catch { }
+                        catch {
+                            Write-Status "Non-critical error during cleanup: $($_.Exception.Message)" -Type Warning
+                        }
                     }
                     
-                    # Always clean up folders (catches orphaned/corrupted installs)
                     $removed = $false
                     foreach ($path in $modulePaths) {
                         if (Test-Path $path) {
@@ -338,7 +335,6 @@ function Remove-ChocoPackages {
     
     foreach ($package in $packagesToRemove) {
         try {
-            # Choco v2.x: check if package exists in local list
             $listOutput = choco list --limit-output 2>$null
             $isInstalled = $listOutput | Where-Object { $_ -match "^$package\|" }
             
@@ -371,7 +367,6 @@ function Remove-Chocolatey {
     
     if ($PSCmdlet.ShouldProcess("Chocolatey", "Completely remove Chocolatey")) {
         try {
-            # Remove Chocolatey directory
             $chocoPath = $env:ChocolateyInstall
             if (-not $chocoPath) {
                 $chocoPath = "C:\ProgramData\chocolatey"
@@ -382,26 +377,22 @@ function Remove-Chocolatey {
                 Write-Status "Removed $chocoPath" -Type Success
             }
             
-            # Remove Chocolatey temp files
             $chocoTemp = "$env:LOCALAPPDATA\Temp\chocolatey"
             if (Test-Path $chocoTemp) {
                 Remove-Item -Path $chocoTemp -Recurse -Force -ErrorAction SilentlyContinue
                 Write-Status "Removed temp files: $chocoTemp" -Type Success
             }
             
-            # Remove Chocolatey cache
             $chocoCache = "$env:LOCALAPPDATA\NuGet"
             if (Test-Path $chocoCache) {
                 Remove-Item -Path $chocoCache -Recurse -Force -ErrorAction SilentlyContinue
                 Write-Status "Removed cache: $chocoCache" -Type Success
             }
             
-            # Remove environment variables
             [System.Environment]::SetEnvironmentVariable("ChocolateyInstall", $null, "Machine")
             [System.Environment]::SetEnvironmentVariable("ChocolateyToolsLocation", $null, "Machine")
             [System.Environment]::SetEnvironmentVariable("ChocolateyInstall", $null, "User")
             
-            # Remove from PATH
             $machinePath = [System.Environment]::GetEnvironmentVariable("Path", "Machine")
             $newPath = ($machinePath -split ';' | Where-Object { $_ -notlike "*chocolatey*" }) -join ';'
             [System.Environment]::SetEnvironmentVariable("Path", $newPath, "Machine")
@@ -551,11 +542,9 @@ function Remove-RedTeamProfile {
             }
             
             if ($PSCmdlet.ShouldProcess($profilePath, "Remove red team configuration")) {
-                # Remove everything between the start and end markers (inclusive)
                 $pattern = '(?s)\r?\n*# =+\r?\n# Azure Red Team Tools Configuration.*?# End Azure Red Team Tools Configuration\r?\n# =+\r?\n*'
                 $newContent = $content -replace $pattern, "`n"
                 
-                # Clean up extra blank lines
                 $newContent = $newContent -replace "(\r?\n){3,}", "`n`n"
                 $newContent = $newContent.Trim()
                 
@@ -564,7 +553,6 @@ function Remove-RedTeamProfile {
                     Write-Status "Cleaned profile: $profilePath" -Type Success
                 }
                 else {
-                    # Profile is now empty or nearly empty, remove it
                     Remove-Item -Path $profilePath -Force
                     Write-Status "Removed empty profile: $profilePath" -Type Success
                 }
@@ -606,7 +594,6 @@ if (-not $WhatIfPreference -and -not $PSBoundParameters.ContainsKey('WhatIf') -a
     }
 }
 
-# Execute cleanup in reverse order of installation
 Remove-Shortcuts
 Remove-ToolsDirectory -Path $ToolsPath
 Remove-PythonPackages
@@ -641,4 +628,4 @@ if (-not ($RemoveChocolatey -or $RemoveAll)) {
 
 if (-not ($RemoveDefenderExclusion -or $RemoveAll)) {
     Write-Host "Note: Defender exclusion was kept. Use -RemoveDefenderExclusion to remove it.`n" -ForegroundColor Cyan
-} 
+}

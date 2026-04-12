@@ -48,16 +48,8 @@ param(
     [switch]$Force
 )
 
-# ============================================================================
-# Configuration
-# ============================================================================
-
 $SysmonPath = 'C:\Windows\Sysmon64.exe'
 $TranscriptDir = 'C:\PSTranscripts'
-
-# ============================================================================
-# Helper Functions
-# ============================================================================
 
 function Write-Status {
     param(
@@ -79,10 +71,6 @@ function Write-Section {
     param([string]$Title)
     Write-Host "`n[+] $Title" -ForegroundColor White
 }
-
-# ============================================================================
-# Prerequisites
-# ============================================================================
 
 function Test-Administrator {
     Write-Section "Checking Prerequisites..."
@@ -111,18 +99,13 @@ function Test-Administrator {
     Write-Status "Administrator privileges confirmed" -Type Success
 }
 
-# ============================================================================
-# Sysmon Removal
-# ============================================================================
-
 function Test-SysmonInstalled {
-    return (Get-Service -Name 'Sysmon*' -ErrorAction SilentlyContinue) -ne $null
+    return $null -ne (Get-Service -Name 'Sysmon*' -ErrorAction SilentlyContinue)
 }
 
 function Remove-Sysmon {
     Write-Section "Removing Sysmon..."
     
-    # Check for service AND files (files may remain after service removal)
     $serviceExists = Test-SysmonInstalled
     $filePaths = @(
         $SysmonPath,
@@ -138,7 +121,6 @@ function Remove-Sysmon {
     }
     
     try {
-        # Find Sysmon executable - check all known locations
         $sysmonExe = $null
         $allPaths = @(
             $SysmonPath,
@@ -154,10 +136,10 @@ function Remove-Sysmon {
             }
         }
         
-        # Fallback: try to find via service
+        # Fallback: try to find via service using CimInstance (replaces deprecated WMI cmdlet)
         if (-not $sysmonExe) {
-            $service = Get-WmiObject -Class Win32_Service -Filter "Name LIKE 'Sysmon%'" -ErrorAction SilentlyContinue
-            if ($service) {
+            $service = Get-CimInstance -ClassName Win32_Service -Filter "Name LIKE 'Sysmon%'" -ErrorAction SilentlyContinue
+            if ($null -ne $service) {
                 $exePath = $service.PathName -replace '"', '' -replace ' .*', ''
                 if (Test-Path $exePath) {
                     $sysmonExe = $exePath
@@ -166,17 +148,14 @@ function Remove-Sysmon {
         }
         
         if ($sysmonExe -and (Test-Path $sysmonExe)) {
-            # Only uninstall service if it exists
             if ($serviceExists) {
                 Write-Status "Uninstalling Sysmon service..."
                 
                 if ($PSCmdlet.ShouldProcess("Sysmon", "Uninstall service")) {
                     $result = Start-Process -FilePath $sysmonExe -ArgumentList "-u", "force" -Wait -PassThru -NoNewWindow
                     
-                    # Wait for handles to release
                     Start-Sleep -Seconds 5
                     
-                    # Verify removal
                     if (-not (Test-SysmonInstalled)) {
                         Write-Status "Sysmon service removed" -Type Success
                     } else {
@@ -188,7 +167,6 @@ function Remove-Sysmon {
                 Start-Sleep -Seconds 2
             }
             
-            # Remove the binary - may need retries as handles release
             if ($PSCmdlet.ShouldProcess($sysmonExe, "Remove binary")) {
                 $deleted = $false
                 for ($i = 1; $i -le 5; $i++) {
@@ -203,7 +181,6 @@ function Remove-Sysmon {
                     }
                 }
                 
-                # Fallback: try cmd.exe
                 if (-not $deleted -and (Test-Path $sysmonExe)) {
                     cmd /c "del /f /q `"$sysmonExe`"" 2>$null
                     Start-Sleep -Seconds 1
@@ -211,7 +188,6 @@ function Remove-Sysmon {
                 
                 if (Test-Path $sysmonExe) {
                     Write-Status "Sysmon binary locked - will be deleted on reboot" -Type Warning
-                    # Schedule for deletion on reboot using PendingFileRenameOperations
                     $pendingKey = "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager"
                     $pending = (Get-ItemProperty -Path $pendingKey -Name PendingFileRenameOperations -ErrorAction SilentlyContinue).PendingFileRenameOperations
                     if (-not $pending) { $pending = @() }
@@ -226,16 +202,14 @@ function Remove-Sysmon {
         } else {
             Write-Status "Sysmon executable not found, trying service removal..." -Type Warning
             
-            # Try to stop and remove service directly
             $service = Get-Service -Name 'Sysmon*' -ErrorAction SilentlyContinue
-            if ($service) {
+            if ($null -ne $service) {
                 Stop-Service -Name $service.Name -Force -ErrorAction SilentlyContinue
                 sc.exe delete $service.Name | Out-Null
                 Write-Status "Sysmon service removed via sc.exe" -Type Success
             }
         }
         
-        # Clean up driver if present
         $driverPath = "C:\Windows\System32\drivers\Sysmon*.sys"
         Get-ChildItem -Path $driverPath -ErrorAction SilentlyContinue | ForEach-Object {
             $deleted = $false
@@ -253,7 +227,6 @@ function Remove-Sysmon {
             }
         }
         
-        # Also check for Sysmon files in C:\Windows (common alternate location)
         $altPaths = @(
             "C:\Windows\Sysmon.exe",
             "C:\Windows\Sysmon64.exe",
@@ -291,15 +264,10 @@ function Remove-Sysmon {
     }
 }
 
-# ============================================================================
-# PowerShell Logging Removal
-# ============================================================================
-
 function Disable-PSLogging {
     Write-Section "Disabling PowerShell Logging..."
     
     try {
-        # Script Block Logging
         $scriptBlockPath = "HKLM:\Software\Policies\Microsoft\Windows\PowerShell\ScriptBlockLogging"
         if (Test-Path $scriptBlockPath) {
             if ($PSCmdlet.ShouldProcess($scriptBlockPath, "Remove registry key")) {
@@ -310,7 +278,6 @@ function Disable-PSLogging {
             Write-Status "Script Block Logging was not configured" -Type Info
         }
         
-        # Module Logging
         $moduleLogPath = "HKLM:\Software\Policies\Microsoft\Windows\PowerShell\ModuleLogging"
         if (Test-Path $moduleLogPath) {
             if ($PSCmdlet.ShouldProcess($moduleLogPath, "Remove registry key")) {
@@ -321,7 +288,6 @@ function Disable-PSLogging {
             Write-Status "Module Logging was not configured" -Type Info
         }
         
-        # Transcription
         $transcriptPath = "HKLM:\Software\Policies\Microsoft\Windows\PowerShell\Transcription"
         if (Test-Path $transcriptPath) {
             if ($PSCmdlet.ShouldProcess($transcriptPath, "Remove registry key")) {
@@ -332,7 +298,6 @@ function Disable-PSLogging {
             Write-Status "Transcription was not configured" -Type Info
         }
         
-        # Clean up parent key if empty
         $psPath = "HKLM:\Software\Policies\Microsoft\Windows\PowerShell"
         if (Test-Path $psPath) {
             $children = Get-ChildItem -Path $psPath -ErrorAction SilentlyContinue
@@ -341,7 +306,6 @@ function Disable-PSLogging {
             }
         }
         
-        # Remove transcript files if requested
         if (-not $KeepTranscripts -and (Test-Path $TranscriptDir)) {
             if ($PSCmdlet.ShouldProcess($TranscriptDir, "Remove transcript directory")) {
                 $transcriptCount = (Get-ChildItem -Path $TranscriptDir -Recurse -File -ErrorAction SilentlyContinue).Count
@@ -359,21 +323,15 @@ function Disable-PSLogging {
     }
 }
 
-# ============================================================================
-# Audit Policy Reset
-# ============================================================================
-
 function Reset-AuditPolicies {
     Write-Section "Resetting Windows Audit Policies..."
     
     try {
-        # Process Creation
         if ($PSCmdlet.ShouldProcess("Process Creation", "Disable auditing")) {
             auditpol /set /subcategory:"Process Creation" /success:disable /failure:disable | Out-Null
             Write-Status "Process Creation auditing disabled" -Type Success
         }
         
-        # Remove command line logging
         $cmdLinePath = "HKLM:\Software\Microsoft\Windows\CurrentVersion\Policies\System\Audit"
         if (Test-Path $cmdLinePath) {
             if ($PSCmdlet.ShouldProcess($cmdLinePath, "Remove registry key")) {
@@ -382,32 +340,27 @@ function Reset-AuditPolicies {
             }
         }
         
-        # Logon/Logoff - reset to defaults (usually success only)
         if ($PSCmdlet.ShouldProcess("Logon/Logoff", "Reset to defaults")) {
             auditpol /set /subcategory:"Logon" /success:enable /failure:disable | Out-Null
             auditpol /set /subcategory:"Logoff" /success:disable /failure:disable | Out-Null
             Write-Status "Logon/Logoff auditing reset to defaults" -Type Success
         }
         
-        # Credential Validation
         if ($PSCmdlet.ShouldProcess("Credential Validation", "Disable auditing")) {
             auditpol /set /subcategory:"Credential Validation" /success:disable /failure:disable | Out-Null
             Write-Status "Credential Validation auditing disabled" -Type Success
         }
         
-        # Sensitive Privilege Use
         if ($PSCmdlet.ShouldProcess("Sensitive Privilege Use", "Disable auditing")) {
             auditpol /set /subcategory:"Sensitive Privilege Use" /success:disable /failure:disable | Out-Null
             Write-Status "Sensitive Privilege Use auditing disabled" -Type Success
         }
         
-        # Security Group Management
         if ($PSCmdlet.ShouldProcess("Security Group Management", "Disable auditing")) {
             auditpol /set /subcategory:"Security Group Management" /success:disable /failure:disable | Out-Null
             Write-Status "Security Group Management auditing disabled" -Type Success
         }
         
-        # User Account Management
         if ($PSCmdlet.ShouldProcess("User Account Management", "Disable auditing")) {
             auditpol /set /subcategory:"User Account Management" /success:disable /failure:disable | Out-Null
             Write-Status "User Account Management auditing disabled" -Type Success
@@ -419,10 +372,6 @@ function Reset-AuditPolicies {
         Write-Status "Failed to reset audit policies: $($_.Exception.Message)" -Type Error
     }
 }
-
-# ============================================================================
-# Summary
-# ============================================================================
 
 function Show-Summary {
     Write-Host ""
@@ -448,16 +397,10 @@ function Show-Summary {
     Write-Host ""
 }
 
-# ============================================================================
-# Main
-# ============================================================================
-
-# Determine what to remove
 $removeSysmon = $Sysmon -or $All
 $removePSLogging = $PSLogging -or $All
 $removeAuditPolicies = $AuditPolicies -or $All
 
-# If nothing specified, remove all
 if (-not ($Sysmon -or $PSLogging -or $AuditPolicies -or $All)) {
     $removeSysmon = $true
     $removePSLogging = $true
@@ -469,10 +412,8 @@ Write-Host "============================================================" -Foreg
 Write-Host " Blue Team Tools Uninstaller" -ForegroundColor Cyan
 Write-Host "============================================================" -ForegroundColor Cyan
 
-# Check admin
 Test-Administrator
 
-# Confirm
 Write-Host ""
 Write-Host "  Components to remove:" -ForegroundColor White
 if ($removeSysmon) { Write-Host "    - Sysmon (System Monitor)" -ForegroundColor Gray }
@@ -493,7 +434,6 @@ if (-not $Force) {
     }
 }
 
-# Remove components
 try {
     if ($removeSysmon) { Remove-Sysmon }
     if ($removePSLogging) { Disable-PSLogging }
