@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`-Yes` switch** - skips the confirmation prompt without changing any other behaviour. `-Force` also skips it but additionally reinstalls present components and removes ones that pre-dated the script, so unattended runs previously had no way to opt out of the destructive semantics.
 - **`-Action Test` verb** - Both tooling scripts can now report whether components are configured *and* whether events are actually being produced, without changing anything. Exits `2` when unhealthy so automation can gate on it.
 - **Install manifests** - `C:\ProgramData\AdversaryLab\{blue,red}team-state.json` record what each install actually changed. `-Action Remove` reverses only those changes, restoring prior audit settings and registry values instead of guessing at Windows defaults.
 - **Deploy-time telemetry verification** - `adversary_lab_deploy.ps1` now probes the guest for a running Azure Monitor Agent and waits for a real `Heartbeat` row before declaring success. Opt out with `-SkipTelemetryCheck`; tune with `-TelemetryTimeoutMinutes`.
@@ -29,6 +30,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **One failing component no longer aborts the others** - components are independent; failures are collected and surfaced in the exit code.
 - **Elevation used a hardcoded `pwsh.exe`** that does not exist on a fresh Windows 11 image. Now uses the running host.
 - **Azure Monitor Agent detection** - AMA does not always register a Windows service; a service-only probe reported a false negative on a healthy agent. Now checks service, processes and extension package, and distinguishes "running" from "installed but not running".
+- **Profile and shortcuts targeted the SYSTEM account** under Custom Script Extension / `Invoke-AzVMRunCommand`. `$env:USERPROFILE` resolves to `C:\Windows\system32\config\systemprofile` and `GetFolderPath('Desktop')` returns an empty string, so the install reported success while the interactive admin got nothing. Profiles now target the machine-wide AllUsersAllHosts locations and shortcuts fall back to the all-users desktop.
+- **`Test` used a stale PATH** - a freshly spawned host inherits the PATH from whatever started it, so `pip` installed moments earlier appeared missing. The environment is now refreshed before any probe.
+- **Nested-array returns** - the `return , @(...)` idiom keeps the array wrapped, so `@(f).Count` returned 1 regardless of contents. This made `-Action Remove` iterate over a single array object instead of each item, and made the empty case report 1 rather than 0.
 - **Uninstall no longer removes software it did not install** - `-KeepPython`/`-KeepGit` are unnecessary; pre-existing git, Python and Defender exclusions are left alone.
 
 ### Removed

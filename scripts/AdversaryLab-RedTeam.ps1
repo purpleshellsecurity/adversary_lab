@@ -25,6 +25,11 @@
 .PARAMETER ToolsPath
     Where tools are installed. Default: C:\AzureRedTeamTools
 
+.PARAMETER Yes
+    Skip the confirmation prompt without changing any other behaviour. Use this
+    for unattended runs; -Force also skips the prompt but additionally reinstalls
+    components already present and removes ones that pre-dated this script.
+
 .PARAMETER Force
     Skip the confirmation prompt (required for unattended runs), reinstall
     components already present, and on Remove also remove components that
@@ -72,6 +77,7 @@ param(
     [string]$ToolsPath = 'C:\AzureRedTeamTools',
 
     [switch]$Force,
+    [switch]$Yes,
     [switch]$RemoveChocolatey,
 
     [ValidateNotNullOrEmpty()]
@@ -128,12 +134,27 @@ $ModulePathRoots = @(
     "$env:USERPROFILE\Documents\WindowsPowerShell\Modules"
 )
 
-# AllHosts profiles only. Adding to the CurrentHost profiles as well would load
-# the block twice in the same session.
-$ProfilePaths = @(
-    "$env:USERPROFILE\Documents\WindowsPowerShell\profile.ps1"
-    "$env:USERPROFILE\Documents\PowerShell\profile.ps1"
-)
+# AllUsersAllHosts profiles. Deliberately NOT the per-user
+# $env:USERPROFILE\Documents\... paths: when this runs under SYSTEM (Custom
+# Script Extension, Invoke-AzVMRunCommand) those resolve to
+# C:\Windows\system32\config\systemprofile and no interactive user ever sees
+# them - the install reports success while the RDP admin gets nothing.
+# Machine-wide profiles are also the right scope for a machine-wide tool install.
+function Get-ProfileTargetPaths {
+    $paths = @(Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\profile.ps1')
+
+    $pwshExe = Get-Command pwsh -ErrorAction SilentlyContinue |
+               Select-Object -First 1 -ExpandProperty Source
+    if (-not $pwshExe) {
+        foreach ($c in @("$env:ProgramFiles\PowerShell\7\pwsh.exe",
+                         "$env:ProgramFiles\PowerShell\7-preview\pwsh.exe")) {
+            if (Test-Path $c) { $pwshExe = $c; break }
+        }
+    }
+    if ($pwshExe) { $paths += (Join-Path (Split-Path $pwshExe -Parent) 'profile.ps1') }
+
+    return $paths
+}
 $ProfileMarkerStart = '# Azure Red Team Tools Configuration'
 $ProfileMarkerEnd   = '# End Azure Red Team Tools Configuration'
 
@@ -233,9 +254,9 @@ function Get-InstalledByUs {
     param([string]$Name, [string]$Property = 'Installed')
 
     $state = Get-ComponentState -Name $Name
-    if (-not $state) { return , @() }
-    if (-not $state.PSObject.Properties[$Property]) { return , @() }
-    return , @($state.$Property)
+    if (-not $state) { return @() }
+    if (-not $state.PSObject.Properties[$Property]) { return @() }
+    return @($state.$Property)
 }
 
 # ============================================================================
@@ -726,6 +747,12 @@ function Remove-GitHubReposComponent {
     $ours = @(Get-InstalledByUs -Name 'GitHubRepos')
     $targets = @(if ($Force) { @($GitHubRepos | ForEach-Object { $_.Name }) } else { $ours })
 
+    if ($targets.Count -eq 0) {
+        Write-Status 'No repositories were cloned by this script (use -Force to remove all)' -Type Info
+        Remove-ComponentState -Name 'GitHubRepos'
+        return
+    }
+
     foreach ($name in $targets) {
         $path = Join-Path $ToolsPath $name
         if (-not (Test-Path $path)) { continue }
@@ -920,12 +947,13 @@ function Get-ProfileBlockPattern {
 }
 
 function Test-ProfileComponent {
-    $configured = @($ProfilePaths | Where-Object {
+    $targets = @(Get-ProfileTargetPaths)
+    $configured = @($targets | Where-Object {
         (Test-Path $_) -and ((Get-Content $_ -Raw -ErrorAction SilentlyContinue) -like "*$ProfileMarkerStart*")
     })
     return [pscustomobject]@{
         Present = $configured.Count -gt 0
-        Detail  = "$($configured.Count)/$($ProfilePaths.Count) profile(s) configured"
+        Detail  = "$($configured.Count)/$($targets.Count) profile(s) configured"
     }
 }
 
@@ -934,7 +962,7 @@ function Install-ProfileComponent {
     $pattern = Get-ProfileBlockPattern
     $written = @()
 
-    foreach ($path in $ProfilePaths) {
+    foreach ($path in @(Get-ProfileTargetPaths)) {
         $dir = Split-Path $path -Parent
         if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
 
@@ -965,7 +993,19 @@ function Remove-ProfileComponent {
 
     $pattern = Get-ProfileBlockPattern
 
-    foreach ($path in $ProfilePaths) {
+    # Prefer the paths Install actually wrote, so a change of host layout
+    # between install and removal cannot orphan a block.
+    $state   = Get-ComponentState -Name 'Profile'
+    $targets = @(Get-ProfileTargetPaths)
+    if ($state -and $state.PSObject.Properties['Profiles'] -and $state.Profiles) {
+        # Flatten defensively: a state file written by an older build could
+        # record Path as an array rather than one entry per profile.
+        $recorded = @($state.Profiles | ForEach-Object { $_.Path } | ForEach-Object { $_ }) |
+                    Where-Object { $_ -is [string] -and $_ }
+        $targets  = @(@($targets) + @($recorded) | Select-Object -Unique)
+    }
+
+    foreach ($path in $targets) {
         if (-not (Test-Path $path)) { continue }
         $content = Get-Content $path -Raw -ErrorAction SilentlyContinue
         if ($content -notlike "*$ProfileMarkerStart*") {
@@ -993,8 +1033,28 @@ function Remove-ProfileComponent {
 # Component: Shortcuts
 # ============================================================================
 
-function Test-ShortcutsComponent {
+function Get-DesktopPath {
+    <#
+        Under SYSTEM - which is how Custom Script Extension and
+        Invoke-AzVMRunCommand execute - the per-user Desktop resolves to an
+        empty string and Join-Path throws. Fall back to the all-users desktop,
+        which is where a machine-wide tool install belongs anyway.
+    #>
     $desktop = [Environment]::GetFolderPath('Desktop')
+    if (-not [string]::IsNullOrWhiteSpace($desktop) -and (Test-Path $desktop)) { return $desktop }
+
+    if ($env:PUBLIC) {
+        $public = Join-Path $env:PUBLIC 'Desktop'
+        if (Test-Path $public) { return $public }
+    }
+    return $null
+}
+
+function Test-ShortcutsComponent {
+    $desktop = Get-DesktopPath
+    if (-not $desktop) {
+        return [pscustomobject]@{ Present = $false; Detail = 'no writable desktop folder available' }
+    }
     $found = @($ShortcutNames | Where-Object { Test-Path (Join-Path $desktop $_) })
     return [pscustomobject]@{
         Present = $found.Count -eq $ShortcutNames.Count
@@ -1003,8 +1063,12 @@ function Test-ShortcutsComponent {
 }
 
 function Install-ShortcutsComponent {
-    $desktop = [Environment]::GetFolderPath('Desktop')
-    $shell   = New-Object -ComObject WScript.Shell
+    $desktop = Get-DesktopPath
+    if (-not $desktop) {
+        Write-Status 'No writable desktop folder; skipping shortcuts' -Type Warning
+        return
+    }
+    $shell = New-Object -ComObject WScript.Shell
 
     $sc = $shell.CreateShortcut((Join-Path $desktop 'Azure Red Team Tools.lnk'))
     $sc.TargetPath = $ToolsPath
@@ -1028,8 +1092,8 @@ function Install-ShortcutsComponent {
     $sc.WorkingDirectory = $ToolsPath
     $sc.Save()
 
-    Write-Status 'Desktop shortcuts created' -Type Success
-    Set-ComponentState -Name 'Shortcuts' -Data @{ InstalledAt = (Get-Date).ToString('o'); Names = $ShortcutNames }
+    Write-Status "Desktop shortcuts created in $desktop" -Type Success
+    Set-ComponentState -Name 'Shortcuts' -Data @{ InstalledAt = (Get-Date).ToString('o'); Names = $ShortcutNames; Desktop = $desktop }
 }
 
 function Remove-ShortcutsComponent {
@@ -1037,7 +1101,11 @@ function Remove-ShortcutsComponent {
         Justification = 'Internal helper. Mutations are gated by Invoke-ComponentAction.')]
     param()
 
-    $desktop = [Environment]::GetFolderPath('Desktop')
+    # Prefer the desktop Install actually wrote to, in case it differed.
+    $state   = Get-ComponentState -Name 'Shortcuts'
+    $desktop = if ($state -and $state.PSObject.Properties['Desktop'] -and $state.Desktop) { $state.Desktop } else { Get-DesktopPath }
+    if (-not $desktop) { Write-Status 'No desktop folder to clean' -Type Info; Remove-ComponentState -Name 'Shortcuts'; return }
+
     foreach ($name in $ShortcutNames) {
         $path = Join-Path $desktop $name
         if (Test-Path $path) { Remove-Item -Path $path -Force; Write-Status "Removed $name" -Type Success }
@@ -1176,6 +1244,9 @@ function Show-Summary {
 # Main
 # ============================================================================
 
+# Pick up PATH changes made by earlier installs before probing anything.
+Update-EnvironmentPath
+
 $selected = Get-SelectedComponents
 
 Write-Banner "AdversaryLab Red Team - $Action"
@@ -1202,7 +1273,7 @@ try {
         Write-Host ''
     }
 
-    if (-not $Force -and -not $WhatIfPreference) {
+    if (-not $Force -and -not $Yes -and -not $WhatIfPreference) {
         $confirm = Read-Host "  Proceed with $($Action.ToLower())? (y/N)"
         if ($confirm -notmatch '^[Yy]') {
             Write-Host '  Cancelled.' -ForegroundColor Yellow

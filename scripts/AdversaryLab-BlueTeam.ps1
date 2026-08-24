@@ -36,6 +36,11 @@
 .PARAMETER KeepTranscripts
     On Remove, leave C:\PSTranscripts in place.
 
+.PARAMETER Yes
+    Skip the confirmation prompt without changing any other behaviour. Use this
+    for unattended runs; -Force also skips the prompt but additionally reinstalls
+    components already present and removes ones that pre-dated this script.
+
 .PARAMETER Force
     Skip the confirmation prompt (required for unattended runs via Custom Script
     Extension or Invoke-AzVMRunCommand), reinstall components already present,
@@ -88,6 +93,7 @@ param(
     [switch]$UseDefaultSysmonConfig,
     [switch]$KeepTranscripts,
     [switch]$Force,
+    [switch]$Yes,
     [switch]$SkipAgentRestart,
 
     [ValidateNotNullOrEmpty()]
@@ -1246,7 +1252,7 @@ try {
     }
 
     # -WhatIf and -Force both imply no interactive confirmation.
-    if (-not $Force -and -not $WhatIfPreference) {
+    if (-not $Force -and -not $Yes -and -not $WhatIfPreference) {
         foreach ($row in (Get-ComponentReport -Names $selected)) {
             $state = if ($row.Present) { 'configured' } else { 'not configured' }
             Write-Host "    - $($row.Component): currently $state" -ForegroundColor Gray
