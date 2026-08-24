@@ -35,6 +35,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Nested-array returns** - the `return , @(...)` idiom keeps the array wrapped, so `@(f).Count` returned 1 regardless of contents. This made `-Action Remove` iterate over a single array object instead of each item, and made the empty case report 1 rather than 0.
 - **Uninstall no longer removes software it did not install** - `-KeepPython`/`-KeepGit` are unnecessary; pre-existing git, Python and Defender exclusions are left alone.
 
+### Security
+- **Removed the subscription-scoped Contributor grant** to the VM's system-assigned managed identity. Combined with internet-facing RDP, a Defender exclusion, and preinstalled offensive tooling, any code execution on the lab VM became subscription Contributor via a single `Connect-AzAccount -Identity`. The identity is still enabled; it simply holds no role assignments. Attack simulations that need Azure permissions should be granted an explicit, scoped role.
+
 ### Removed
 - `Install-BlueTeamTools.ps1`, `Uninstall-BlueTeamTools.ps1`, `Install-RedTeamTools.ps1`, `Uninstall-RedTeamTools.ps1` - superseded by the merged scripts.
 

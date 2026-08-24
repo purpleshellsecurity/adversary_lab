@@ -443,24 +443,11 @@ try {
         Write-ColoredOutput "Deploying Azure Activity logs..." "Yellow"
         
         $workspaceName = $deployment.Outputs["workspaceName"].Value
-        $vmName = $deployment.Outputs["vmName"].Value
-        
-        Write-ColoredOutput "Retrieving VM managed identity..." "Yellow"
-        $vm = Get-AzVM -ResourceGroupName $params.ResourceGroupName -Name $vmName
-        
-        if ($vm.Identity -and $vm.Identity.PrincipalId) {
-            $vmPrincipalId = $vm.Identity.PrincipalId
-            Write-ColoredOutput "Found VM managed identity: $vmPrincipalId" "Green"
-        } else {
-            throw "VM '$vmName' does not have a system-assigned managed identity enabled."
-        }
         
         $subTemplateParams = @{
             resourceGroupName   = $params.ResourceGroupName
             workspaceName       = $workspaceName
             enableAzureActivity = $params.EnableAzureActivity
-            vmPrincipalId       = $vmPrincipalId
-            vmName              = $vmName
         }
         
         $null = New-AzSubscriptionDeployment `
