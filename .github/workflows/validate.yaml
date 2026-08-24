@@ -48,6 +48,10 @@ jobs:
         run: |
           Install-Module PSScriptAnalyzer -Force -Scope CurrentUser
 
+          # Only genuinely noisy rules are excluded. The ShouldProcess and
+          # ApprovedVerbs rules are enforced: -WhatIf correctness is a safety
+          # contract for installers, and per-function exceptions use targeted
+          # [SuppressMessageAttribute] with a justification instead.
           $excludeRules = @(
             'PSAvoidUsingWriteHost',
             'PSAvoidUsingInvokeExpression',
@@ -55,11 +59,7 @@ jobs:
             'PSAvoidUsingPlainTextForPassword',
             'PSAvoidUsingConvertToSecureStringWithPlainText',
             'PSUseSingularNouns',
-            'PSUseBOMForUnicodeEncodedFile',
-            'PSUseDeclaredVarsMoreThanAssignments',
-            'PSUseShouldProcessForStateChangingFunctions',
-            'PSShouldProcess',
-            'PSUseApprovedVerbs'
+            'PSUseBOMForUnicodeEncodedFile'
           )
 
           $results = Invoke-ScriptAnalyzer `

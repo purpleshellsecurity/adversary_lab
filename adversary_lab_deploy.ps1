@@ -27,7 +27,9 @@ param(
     [bool]$EnableShutdownNotificationEmails = $false,
     [string]$NotificationEmail = "",
     [int]$NotificationMinutesBefore = 15,
-    [bool]$EnableFlowLogs = $true
+    [bool]$EnableFlowLogs = $true,
+    [switch]$SkipTelemetryCheck,
+    [int]$TelemetryTimeoutMinutes = 15
 )
 
 $ErrorActionPreference = "Stop"
@@ -60,6 +62,8 @@ function Get-PublicIPAddress {
 }
 
 function New-CompliantPassword {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '',
+        Justification = 'Pure function: generates and returns a string, changes no system state.')]
     param([int]$Length = 16)
     
     $uppercase = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
@@ -262,6 +266,116 @@ function Test-NetworkWatcher {
     }
 }
 
+function Test-VmMonitorAgent {
+    <#
+        The AMA extension reports provisioningState 'Succeeded' even when the
+        agent on the box is not running, which lets host telemetry fail silently
+        for weeks. Check the guest directly rather than trusting the extension.
+    #>
+    param([string]$ResourceGroupName, [string]$VmName)
+
+    $probe = @'
+$svc  = Get-Service -Name 'AzureMonitorAgent' -ErrorAction SilentlyContinue
+$proc = @(Get-Process -Name 'MonAgentCore','MonAgentHost','MonAgentLauncher' -ErrorAction SilentlyContinue)
+$pkg  = Get-ChildItem 'C:\Packages\Plugins\Microsoft.Azure.Monitor.AzureMonitorWindowsAgent' -Directory -ErrorAction SilentlyContinue | Select-Object -First 1
+if (($svc -and $svc.Status -eq 'Running') -or $proc.Count -gt 0) { "AGENT=RUNNING" }
+elseif ($pkg) { "AGENT=INSTALLED_NOT_RUNNING" }
+else { "AGENT=ABSENT" }
+'@
+
+    try {
+        $result = Invoke-AzVMRunCommand -ResourceGroupName $ResourceGroupName -VMName $VmName `
+                                        -CommandId 'RunPowerShellScript' -ScriptString $probe -ErrorAction Stop
+        $text = ($result.Value | ForEach-Object { $_.Message }) -join "`n"
+
+        if ($text -match 'AGENT=RUNNING')               { return 'Running' }
+        if ($text -match 'AGENT=INSTALLED_NOT_RUNNING') { return 'NotRunning' }
+        return 'Absent'
+    }
+    catch {
+        Write-ColoredOutput "  Could not probe the VM: $($_.Exception.Message)" "Yellow"
+        return 'Unknown'
+    }
+}
+
+function Wait-ForHeartbeat {
+    <#
+        The only proof that the pipeline works end to end is a row landing in the
+        workspace. Poll until one arrives or we give up.
+    #>
+    param([string]$WorkspaceCustomerId, [int]$TimeoutMinutes)
+
+    $deadline = (Get-Date).AddMinutes($TimeoutMinutes)
+    $query    = "Heartbeat | where TimeGenerated > ago(30m) | summarize N = count()"
+
+    while ((Get-Date) -lt $deadline) {
+        try {
+            $r = Invoke-AzOperationalInsightsQuery -WorkspaceId $WorkspaceCustomerId -Query $query -ErrorAction Stop
+            $n = [int]($r.Results | Select-Object -First 1).N
+            if ($n -gt 0) { return $n }
+        }
+        catch {
+            # A newly created workspace can reject queries for the first minute
+            # or two. Keep polling rather than treating this as fatal.
+            Write-Verbose "Heartbeat query not ready yet: $($_.Exception.Message)"
+        }
+
+        $remaining = [int]($deadline - (Get-Date)).TotalMinutes
+        Write-ColoredOutput "  No heartbeat yet; still waiting (~$remaining min left)..." "Yellow"
+        Start-Sleep -Seconds 60
+    }
+
+    return 0
+}
+
+function Test-LabTelemetry {
+    param(
+        [string]$ResourceGroupName,
+        [string]$VmName,
+        [string]$WorkspaceCustomerId,
+        [int]$TimeoutMinutes
+    )
+
+    Write-ColoredOutput "`n=== Verifying Telemetry Pipeline ===" "Cyan"
+
+    $agent = Test-VmMonitorAgent -ResourceGroupName $ResourceGroupName -VmName $VmName
+
+    switch ($agent) {
+        'Running' {
+            Write-ColoredOutput "Azure Monitor Agent is running on the VM" "Green"
+        }
+        'NotRunning' {
+            Write-ColoredOutput "Azure Monitor Agent is INSTALLED BUT NOT RUNNING" "Red"
+            Write-ColoredOutput "  The extension reports success but nothing is shipping logs." "Red"
+            Write-ColoredOutput "  Repair with:" "Yellow"
+            Write-ColoredOutput "    az vm extension set -g $ResourceGroupName --vm-name $VmName ``" "Yellow"
+            Write-ColoredOutput "      --publisher Microsoft.Azure.Monitor --name AzureMonitorWindowsAgent --force-update" "Yellow"
+            return $false
+        }
+        'Absent' {
+            Write-ColoredOutput "Azure Monitor Agent is NOT INSTALLED on the VM" "Red"
+            return $false
+        }
+        default {
+            Write-ColoredOutput "Could not determine agent state; skipping heartbeat check" "Yellow"
+            return $false
+        }
+    }
+
+    Write-ColoredOutput "Waiting for the first heartbeat to reach the workspace..." "Yellow"
+    $beats = Wait-ForHeartbeat -WorkspaceCustomerId $WorkspaceCustomerId -TimeoutMinutes $TimeoutMinutes
+
+    if ($beats -gt 0) {
+        Write-ColoredOutput "Telemetry confirmed: $beats heartbeat(s) in the workspace" "Green"
+        return $true
+    }
+
+    Write-ColoredOutput "NO HEARTBEAT after $TimeoutMinutes minutes" "Red"
+    Write-ColoredOutput "  The agent is running but nothing is reaching Log Analytics." "Red"
+    Write-ColoredOutput "  Check the DCR association and the VM's managed identity." "Yellow"
+    return $false
+}
+
 # Main execution
 try {
     Write-ColoredOutput "Starting Adversary Lab deployment..." "Green"
@@ -313,6 +427,17 @@ try {
     
     $deployment = New-AzResourceGroupDeployment @deploymentParams -ErrorAction Stop
     Write-ColoredOutput "Infrastructure deployment completed!" "Green"
+
+    # Save credentials immediately. The VM now exists, and if the password was
+    # auto-generated it lives only in memory - any later failure (activity logs,
+    # flow logs, budget) would otherwise lose it permanently along with access
+    # to a VM that is already running and billing.
+    $credFile = Save-CredentialsToFile `
+        -AdminUsername $params.AdminUsername `
+        -AdminPassword $params.AdminPassword `
+        -VmPublicIP $deployment.Outputs["vmPublicIP"].Value `
+        -OutputPath $PSScriptRoot
+    Write-ColoredOutput "Credentials saved to: $credFile" "Yellow"
     
     if ($params.EnableAzureActivity) {
         Write-ColoredOutput "Deploying Azure Activity logs..." "Yellow"
@@ -338,7 +463,7 @@ try {
             vmName              = $vmName
         }
         
-        $subscriptionDeployment = New-AzSubscriptionDeployment `
+        $null = New-AzSubscriptionDeployment `
             -Location $params.Location `
             -TemplateFile $subscriptionTemplate `
             -TemplateParameterObject $subTemplateParams `
@@ -359,7 +484,7 @@ try {
             retentionDays       = $params.RetentionInDays
         }
         
-        $flowLogDeployment = New-AzSubscriptionDeployment `
+        $null = New-AzSubscriptionDeployment `
             -Location $params.Location `
             -TemplateFile $flowLogsTemplate `
             -TemplateParameterObject $flowLogTemplateParams `
@@ -367,11 +492,15 @@ try {
         Write-ColoredOutput "VNet Flow Logs deployment completed!" "Green"
     }
     
-    $credFile = Save-CredentialsToFile `
-        -AdminUsername $params.AdminUsername `
-        -AdminPassword $params.AdminPassword `
-        -VmPublicIP $deployment.Outputs["vmPublicIP"].Value `
-        -OutputPath $PSScriptRoot
+    $telemetryOk = $null
+    if (-not $SkipTelemetryCheck) {
+        $telemetryOk = Test-LabTelemetry `
+            -ResourceGroupName $params.ResourceGroupName `
+            -VmName $deployment.Outputs["vmName"].Value `
+            -WorkspaceCustomerId $deployment.Outputs["workspaceId"].Value `
+            -TimeoutMinutes $TelemetryTimeoutMinutes
+    }
+
     
     Write-ColoredOutput "`n=== Deployment Summary ===" "Cyan"
     Write-ColoredOutput "✓ Resource Group: $($params.ResourceGroupName)" "Green"
@@ -384,6 +513,17 @@ try {
     
     if ($params.EnableAzureActivity) {
         Write-ColoredOutput "✓ Azure Activity Logs: Enabled" "Green"
+    }
+
+    if ($null -eq $telemetryOk) {
+        Write-ColoredOutput "- Telemetry pipeline: not verified (-SkipTelemetryCheck)" "Yellow"
+    }
+    elseif ($telemetryOk) {
+        Write-ColoredOutput "✓ Telemetry pipeline: verified end to end" "Green"
+    }
+    else {
+        Write-ColoredOutput "✗ Telemetry pipeline: NOT WORKING - see above" "Red"
+        Write-ColoredOutput "  Host logs will not reach Log Analytics until this is fixed." "Red"
     }
     
     Write-ColoredOutput "`n✓ Credentials saved to: $credFile" "Yellow"
