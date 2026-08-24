@@ -17,6 +17,7 @@ param(
     [SecureString]$AdminPassword = $null,
     [string]$MyIP = "",
     [string]$namePrefix = "adversarylab",
+    [string]$ResourceSuffix = "",
     [string]$VmSize = "Standard_D2s_v4",
     [int]$RetentionInDays = 30,
     [bool]$EnableAzureActivity = $true,
@@ -425,6 +426,13 @@ try {
         notificationMinutesBefore        = $params.NotificationMinutesBefore
     }
     
+    # Pin the suffix when adopting an existing deployment; otherwise the template
+    # derives a stable one from the resource group id.
+    if (-not [string]::IsNullOrWhiteSpace($ResourceSuffix)) {
+        $deploymentParams['resourceSuffix'] = $ResourceSuffix
+        Write-ColoredOutput "Using pinned resource suffix: $ResourceSuffix" "Yellow"
+    }
+
     $deployment = New-AzResourceGroupDeployment @deploymentParams -ErrorAction Stop
     Write-ColoredOutput "Infrastructure deployment completed!" "Green"
 
@@ -469,6 +477,11 @@ try {
             storageAccountId    = $deployment.Outputs["storageAccountResourceId"].Value
             workspaceResourceId = $deployment.Outputs["workspaceResourceId"].Value
             retentionDays       = $params.RetentionInDays
+            tags                = @{
+                Environment = 'Development'
+                Project     = $params.namePrefix
+                Purpose     = 'AdversaryLab'
+            }
         }
         
         $null = New-AzSubscriptionDeployment `

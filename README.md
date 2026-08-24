@@ -169,7 +169,7 @@ The interactive deployment will prompt for:
 |---------|---------|
 | Auto-shutdown | 11:30 PM daily (configurable) |
 | Budget alerts | $50/month threshold (requires email) |
-| Resource tagging | Environment, Project, Purpose tags |
+| Resource tagging | Environment, Project, Purpose tags on all supported resources (override with `-tags`) |
 
 ## Post-Deployment Steps
 
