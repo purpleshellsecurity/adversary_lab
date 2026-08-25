@@ -94,10 +94,17 @@ function Save-CredentialsToFile {
         [string]$OutputPath
     )
     
-    # Decrypt SecureString just for writing to file
-    $plainTextPassword = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto(
-        [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($AdminPassword)
-    )
+    # Decrypt SecureString just for writing to file.
+    # PtrToStringBSTR, not PtrToStringAuto: SecureStringToBSTR returns UTF-16LE,
+    # but on .NET Core/Unix 'Auto' marshals as ANSI and stops at the first NUL
+    # byte, silently writing only the first character of the password.
+    $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($AdminPassword)
+    try {
+        $plainTextPassword = [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
+    }
+    finally {
+        [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
+    }
 
     $credFile = Join-Path $OutputPath "credentials.txt"
     $content = @"
