@@ -299,32 +299,39 @@ else { "AGENT=ABSENT" }
     }
 }
 
-function Wait-ForHeartbeat {
+function Wait-ForWorkspaceRows {
     <#
-        The only proof that the pipeline works end to end is a row landing in the
-        workspace. Poll until one arrives or we give up.
+        The only proof that a pipeline works end to end is a row landing in the
+        workspace. Poll until one arrives or the shared deadline passes. Always
+        runs at least one query, so a caller with no time left still gets an
+        answer instead of an automatic failure.
     #>
-    param([string]$WorkspaceCustomerId, [int]$TimeoutMinutes)
+    param(
+        [string]$WorkspaceCustomerId,
+        [string]$Query,
+        [string]$Label,
+        [datetime]$Deadline
+    )
 
-    $deadline = (Get-Date).AddMinutes($TimeoutMinutes)
-    $query    = "Heartbeat | where TimeGenerated > ago(30m) | summarize N = count()"
-
-    while ((Get-Date) -lt $deadline) {
+    do {
         try {
-            $r = Invoke-AzOperationalInsightsQuery -WorkspaceId $WorkspaceCustomerId -Query $query -ErrorAction Stop
+            $r = Invoke-AzOperationalInsightsQuery -WorkspaceId $WorkspaceCustomerId -Query $Query -ErrorAction Stop
             $n = [int]($r.Results | Select-Object -First 1).N
             if ($n -gt 0) { return $n }
         }
         catch {
             # A newly created workspace can reject queries for the first minute
-            # or two. Keep polling rather than treating this as fatal.
-            Write-Verbose "Heartbeat query not ready yet: $($_.Exception.Message)"
+            # or two, and a table that has never received data does not exist
+            # yet. Keep polling rather than treating either as fatal.
+            Write-Verbose "$Label query not ready yet: $($_.Exception.Message)"
         }
 
-        $remaining = [int]($deadline - (Get-Date)).TotalMinutes
-        Write-ColoredOutput "  No heartbeat yet; still waiting (~$remaining min left)..." "Yellow"
+        if ((Get-Date).AddSeconds(60) -ge $Deadline) { break }
+
+        $remaining = [int]($Deadline - (Get-Date)).TotalMinutes
+        Write-ColoredOutput "  No $Label yet; still waiting (~$remaining min left)..." "Yellow"
         Start-Sleep -Seconds 60
-    }
+    } while ((Get-Date) -lt $Deadline)
 
     return 0
 }
@@ -334,16 +341,38 @@ function Test-LabTelemetry {
         [string]$ResourceGroupName,
         [string]$VmName,
         [string]$WorkspaceCustomerId,
+        [bool]$CheckActivityLogs,
         [int]$TimeoutMinutes
     )
 
     Write-ColoredOutput "`n=== Verifying Telemetry Pipeline ===" "Cyan"
 
+    # One time budget for both checks so adding the activity log poll cannot
+    # double how long the operator waits at the end of a deployment.
+    $deadline = (Get-Date).AddMinutes($TimeoutMinutes)
+    $result   = [pscustomobject]@{ HostLogs = $false; ActivityLogs = $null }
+
+    # --- Host telemetry: agent on the VM, then Heartbeat in the workspace ---
     $agent = Test-VmMonitorAgent -ResourceGroupName $ResourceGroupName -VmName $VmName
 
     switch ($agent) {
         'Running' {
             Write-ColoredOutput "Azure Monitor Agent is running on the VM" "Green"
+
+            Write-ColoredOutput "Waiting for the first heartbeat to reach the workspace..." "Yellow"
+            $beats = Wait-ForWorkspaceRows -WorkspaceCustomerId $WorkspaceCustomerId -Deadline $deadline `
+                                           -Label 'heartbeat' `
+                                           -Query "Heartbeat | where TimeGenerated > ago(30m) | summarize N = count()"
+
+            if ($beats -gt 0) {
+                Write-ColoredOutput "Host telemetry confirmed: $beats heartbeat(s) in the workspace" "Green"
+                $result.HostLogs = $true
+            }
+            else {
+                Write-ColoredOutput "NO HEARTBEAT after $TimeoutMinutes minutes" "Red"
+                Write-ColoredOutput "  The agent is running but nothing is reaching Log Analytics." "Red"
+                Write-ColoredOutput "  Check the DCR association and the VM's managed identity." "Yellow"
+            }
         }
         'NotRunning' {
             Write-ColoredOutput "Azure Monitor Agent is INSTALLED BUT NOT RUNNING" "Red"
@@ -351,30 +380,42 @@ function Test-LabTelemetry {
             Write-ColoredOutput "  Repair with:" "Yellow"
             Write-ColoredOutput "    az vm extension set -g $ResourceGroupName --vm-name $VmName ``" "Yellow"
             Write-ColoredOutput "      --publisher Microsoft.Azure.Monitor --name AzureMonitorWindowsAgent --force-update" "Yellow"
-            return $false
         }
         'Absent' {
             Write-ColoredOutput "Azure Monitor Agent is NOT INSTALLED on the VM" "Red"
-            return $false
         }
         default {
             Write-ColoredOutput "Could not determine agent state; skipping heartbeat check" "Yellow"
-            return $false
         }
     }
 
-    Write-ColoredOutput "Waiting for the first heartbeat to reach the workspace..." "Yellow"
-    $beats = Wait-ForHeartbeat -WorkspaceCustomerId $WorkspaceCustomerId -TimeoutMinutes $TimeoutMinutes
+    # --- Subscription telemetry: the activity log diagnostic setting is created
+    #     by the subscription deployment above, which throws on failure, so the
+    #     only open question is whether rows are actually landing. Activity logs
+    #     do not depend on the VM, so check them even if the host pipeline is
+    #     broken. ---
+    if ($CheckActivityLogs) {
+        Write-ColoredOutput "`nWaiting for activity logs to reach the workspace..." "Yellow"
 
-    if ($beats -gt 0) {
-        Write-ColoredOutput "Telemetry confirmed: $beats heartbeat(s) in the workspace" "Green"
-        return $true
+        $rows = Wait-ForWorkspaceRows -WorkspaceCustomerId $WorkspaceCustomerId -Deadline $deadline `
+                                      -Label 'activity log' `
+                                      -Query "AzureActivity | where TimeGenerated > ago(1h) | summarize N = count()"
+
+        if ($rows -gt 0) {
+            Write-ColoredOutput "Activity logs confirmed: $rows record(s) in the last hour" "Green"
+            $result.ActivityLogs = $true
+        }
+        else {
+            # The diagnostic setting deployed successfully, so an empty table is
+            # first-write latency far more often than a broken pipeline.
+            Write-ColoredOutput "AzureActivity is still empty after $TimeoutMinutes minutes" "Yellow"
+            Write-ColoredOutput "  The first write to a new diagnostic setting can take ~20 minutes." "Yellow"
+            Write-ColoredOutput "  Re-check with: AzureActivity | where TimeGenerated > ago(1h)" "Yellow"
+            $result.ActivityLogs = $false
+        }
     }
 
-    Write-ColoredOutput "NO HEARTBEAT after $TimeoutMinutes minutes" "Red"
-    Write-ColoredOutput "  The agent is running but nothing is reaching Log Analytics." "Red"
-    Write-ColoredOutput "  Check the DCR association and the VM's managed identity." "Yellow"
-    return $false
+    return $result
 }
 
 # Main execution
@@ -492,12 +533,13 @@ try {
         Write-ColoredOutput "VNet Flow Logs deployment completed!" "Green"
     }
     
-    $telemetryOk = $null
+    $telemetry = $null
     if (-not $SkipTelemetryCheck) {
-        $telemetryOk = Test-LabTelemetry `
+        $telemetry = Test-LabTelemetry `
             -ResourceGroupName $params.ResourceGroupName `
             -VmName $deployment.Outputs["vmName"].Value `
             -WorkspaceCustomerId $deployment.Outputs["workspaceId"].Value `
+            -CheckActivityLogs $params.EnableAzureActivity `
             -TimeoutMinutes $TelemetryTimeoutMinutes
     }
 
@@ -515,15 +557,27 @@ try {
         Write-ColoredOutput "✓ Azure Activity Logs: Enabled" "Green"
     }
 
-    if ($null -eq $telemetryOk) {
+    if ($null -eq $telemetry) {
         Write-ColoredOutput "- Telemetry pipeline: not verified (-SkipTelemetryCheck)" "Yellow"
     }
-    elseif ($telemetryOk) {
-        Write-ColoredOutput "✓ Telemetry pipeline: verified end to end" "Green"
-    }
     else {
-        Write-ColoredOutput "✗ Telemetry pipeline: NOT WORKING - see above" "Red"
-        Write-ColoredOutput "  Host logs will not reach Log Analytics until this is fixed." "Red"
+        if ($telemetry.HostLogs) {
+            Write-ColoredOutput "✓ Host telemetry (Heartbeat): verified end to end" "Green"
+        }
+        else {
+            Write-ColoredOutput "✗ Host telemetry (Heartbeat): NOT WORKING - see above" "Red"
+            Write-ColoredOutput "  Host logs will not reach Log Analytics until this is fixed." "Red"
+        }
+
+        if ($null -eq $telemetry.ActivityLogs) {
+            Write-ColoredOutput "- Activity logs (AzureActivity): not verified" "Yellow"
+        }
+        elseif ($telemetry.ActivityLogs) {
+            Write-ColoredOutput "✓ Activity logs (AzureActivity): verified end to end" "Green"
+        }
+        else {
+            Write-ColoredOutput "- Activity logs (AzureActivity): no data yet - see above" "Yellow"
+        }
     }
     
     Write-ColoredOutput "`n✓ Credentials saved to: $credFile" "Yellow"
