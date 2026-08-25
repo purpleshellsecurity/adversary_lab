@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`-Yes` switch** - skips the confirmation prompt without changing any other behaviour. `-Force` also skips it but additionally reinstalls present components and removes ones that pre-dated the script, so unattended runs previously had no way to opt out of the destructive semantics.
 - **`-Action Test` verb** - Both tooling scripts can now report whether components are configured *and* whether events are actually being produced, without changing anything. Exits `2` when unhealthy so automation can gate on it.
 - **Install manifests** - `C:\ProgramData\AdversaryLab\{blue,red}team-state.json` record what each install actually changed. `-Action Remove` reverses only those changes, restoring prior audit settings and registry values instead of guessing at Windows defaults.
-- **Deploy-time telemetry verification** - `adversary_lab_deploy.ps1` now probes the guest for a running Azure Monitor Agent and waits for a real `Heartbeat` row before declaring success. Opt out with `-SkipTelemetryCheck`; tune with `-TelemetryTimeoutMinutes`.
+- **Deploy-time telemetry verification** - `adversary_lab_deploy.ps1` now verifies both halves of the pipeline before declaring success: it probes the guest for a running Azure Monitor Agent and waits for a real `Heartbeat` row, and it waits for a real `AzureActivity` row from the subscription diagnostic setting. Both waits share one time budget. Opt out with `-SkipTelemetryCheck`; tune with `-TelemetryTimeoutMinutes`.
 - **Plan mode** - `-WhatIf` renders the intended per-component change set before gating every mutation.
 
 ### Changed
