@@ -900,6 +900,9 @@ function Test-AzureHoundComponent {
 function Install-AzureHoundComponent {
     if ((Test-AzureHoundComponent).Present -and -not $Force) {
         Write-Status 'AzureHound already installed' -Type Success
+        # Record that it pre-dated us. Every other component does this, and
+        # without it Remove deleted a directory this script never created.
+        Set-ComponentState -Name 'AzureHound' -Data @{ PreExisting = $true }
         return
     }
 
@@ -946,6 +949,7 @@ function Install-AzureHoundComponent {
 
     Set-ComponentState -Name 'AzureHound' -Data @{
         InstalledAt = (Get-Date).ToString('o')
+        PreExisting = $false
         Version     = $release.tag_name
         PathEntry   = if ($added) { $exe.DirectoryName } else { $null }
     }
@@ -958,20 +962,31 @@ function Remove-AzureHoundComponent {
 
     $state = Get-ComponentState -Name 'AzureHound'
 
+    if (-not (Test-Path $AzureHoundDir)) {
+        Write-Status 'AzureHound not installed' -Type Info
+        Remove-ComponentState -Name 'AzureHound'
+        return
+    }
+
+    # Leave alone anything this script did not install: either Install recorded
+    # it as pre-existing, or there is no manifest entry at all (installed by
+    # hand, or by a build that pre-dated state tracking). This is what every
+    # other component does; AzureHound used to delete the directory regardless.
+    $preExisting = (-not $state) -or
+                   ($state.PSObject.Properties['PreExisting'] -and $state.PreExisting)
+    if ($preExisting -and -not $Force) {
+        Write-Status 'AzureHound pre-dated this script; leaving it (use -Force to remove)' -Type Warning
+        return
+    }
+
     if ($state -and $state.PSObject.Properties['PathEntry'] -and $state.PathEntry) {
         if (Remove-MachinePath -Directory $state.PathEntry) {
             Write-Status "Removed $($state.PathEntry) from the machine PATH" -Type Success
         }
     }
 
-    if (Test-Path $AzureHoundDir) {
-        Remove-Item -Path $AzureHoundDir -Recurse -Force -ErrorAction SilentlyContinue
-        Write-Status 'AzureHound removed' -Type Success
-    }
-    else {
-        Write-Status 'AzureHound not installed' -Type Info
-    }
-
+    Remove-Item -Path $AzureHoundDir -Recurse -Force -ErrorAction SilentlyContinue
+    Write-Status 'AzureHound removed' -Type Success
     Remove-ComponentState -Name 'AzureHound'
 }
 
@@ -1224,6 +1239,13 @@ function Remove-ShortcutsComponent {
 # Component table - each component declares its three verbs exactly once.
 # Install walks this table in order; Remove walks it in reverse, so the
 # Defender exclusion is added first and removed last.
+#
+# Requires declares what a component needs in order to do anything, so Test and
+# -WhatIf can say 'blocked' rather than just 'absent'. It probes the capability
+# (is git on PATH?) rather than the providing component's completeness, because
+# git or Python installed by some other means is perfectly valid and must not be
+# reported as blocked. From names the component that would supply it. These are
+# reporting only: the checks inside each Install remain the real gate.
 # ============================================================================
 
 $Components = [ordered]@{
@@ -1234,10 +1256,13 @@ $Components = [ordered]@{
     Chocolatey        = @{ Description = 'Chocolatey package manager'
                            Test = { Test-ChocolateyComponent };        Install = { Install-ChocolateyComponent };        Remove = { Remove-ChocolateyComponent } }
     ChocoPackages     = @{ Description = 'Chocolatey packages (git, python3, vscode, azure-cli, ...)'
+                           Requires = @( @{ Test = { Test-CommandExists 'choco' };   Name = 'choco'; From = 'Chocolatey' } )
                            Test = { Test-ChocoPackagesComponent };     Install = { Install-ChocoPackagesComponent };     Remove = { Remove-ChocoPackagesComponent } }
     PythonPackages    = @{ Description = 'Python tools (roadrecon, scoutsuite)'
+                           Requires = @( @{ Test = { [bool](Get-PipCommand) };       Name = 'pip';   From = 'ChocoPackages' } )
                            Test = { Test-PythonPackagesComponent };    Install = { Install-PythonPackagesComponent };    Remove = { Remove-PythonPackagesComponent } }
     GitHubRepos       = @{ Description = 'GitHub tooling repositories'
+                           Requires = @( @{ Test = { Test-CommandExists 'git' };     Name = 'git';   From = 'ChocoPackages' } )
                            Test = { Test-GitHubReposComponent };       Install = { Install-GitHubReposComponent };       Remove = { Remove-GitHubReposComponent } }
     AzureHound        = @{ Description = 'AzureHound collector binary'
                            Test = { Test-AzureHoundComponent };        Install = { Install-AzureHoundComponent };        Remove = { Remove-AzureHoundComponent } }
@@ -1258,6 +1283,21 @@ function Get-SelectedComponents {
     return $names
 }
 
+function Get-UnmetRequirements {
+    param([string]$Name)
+
+    $spec = $Components[$Name]
+    if (-not $spec.ContainsKey('Requires')) { return @() }
+
+    $unmet = @()
+    foreach ($req in $spec.Requires) {
+        $met = $false
+        try { $met = [bool](& $req.Test) } catch { $met = $false }
+        if (-not $met) { $unmet += "$($req.Name) (from $($req.From))" }
+    }
+    return $unmet
+}
+
 function Get-ComponentReport {
     param([string[]]$Names)
 
@@ -1267,10 +1307,15 @@ function Get-ComponentReport {
         try { $result = & $spec.Test }
         catch { $result = [pscustomobject]@{ Present = $false; Detail = "test failed: $($_.Exception.Message)" } }
 
+        # Only worth probing when something is missing; a component that is
+        # already present has satisfied its requirements by definition.
+        $unmet = @(if ($result.Present) { @() } else { Get-UnmetRequirements -Name $name })
+
         $report += [pscustomobject]@{
             Component = $name
             Present   = $result.Present
             Detail    = $result.Detail
+            Unmet     = $unmet
         }
     }
     return $report
@@ -1283,7 +1328,11 @@ function Show-Plan {
     foreach ($row in (Get-ComponentReport -Names $Names)) {
         $state = if ($row.Present) { 'present' } else { 'absent' }
         $verb  = switch ($Action) {
-            'Install' { if ($row.Present -and -not $Force) { 'skip (already present)' } else { 'install' } }
+            'Install' {
+                if ($row.Present -and -not $Force) { 'skip (already present)' }
+                elseif ($row.Unmet)                { "skip (needs $($row.Unmet -join ', '))" }
+                else                               { 'install' }
+            }
             'Remove'  { if ($row.Present) { 'remove' } else { 'skip (absent)' } }
         }
         Write-Status "$($row.Component): currently $state -> would $verb" -Type Plan
@@ -1318,6 +1367,7 @@ function Show-TestReport {
         if ($row.Present) { Write-Status "$($row.Component): present" -Type Success }
         else              { Write-Status "$($row.Component): not installed" -Type Error }
         Write-Host "         $($row.Detail)" -ForegroundColor DarkGray
+        if ($row.Unmet) { Write-Host "         blocked by missing: $($row.Unmet -join ', ')" -ForegroundColor DarkGray }
     }
 
     $missing = @($report | Where-Object { -not $_.Present })
