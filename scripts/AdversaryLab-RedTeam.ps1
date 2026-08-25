@@ -35,6 +35,11 @@
     components already present, and on Remove also remove components that
     pre-dated this script.
 
+.PARAMETER IncludeRetired
+    Also install the retired modules (AzureADPreview, MSOnline). Azure AD Graph
+    is decommissioned, so most of their cmdlets fail at runtime - they are
+    excluded by default rather than costing install time for nothing.
+
 .PARAMETER RemoveChocolatey
     On Remove, also remove Chocolatey itself, not just the packages.
 
@@ -78,6 +83,7 @@ param(
 
     [switch]$Force,
     [switch]$Yes,
+    [switch]$IncludeRetired,
     [switch]$RemoveChocolatey,
 
     [ValidateNotNullOrEmpty()]
@@ -99,8 +105,16 @@ $ProgressPreference    = 'SilentlyContinue'
 # Data - single source of truth for all three verbs
 # ============================================================================
 
-# Retired modules are installed for completeness but flagged: Azure AD Graph is
-# decommissioned, so most MSOnline / AzureADPreview cmdlets now fail at runtime.
+# 'Az' and 'Microsoft.Graph' are meta-modules: manifests whose only content is a
+# dependency list, 102 and 39 modules respectively. They are kept because
+# MicroBurst gates its entire Az function set on 'Get-InstalledModule -Name Az',
+# which matches only the meta-module itself - installing the sub-modules alone
+# would silently disable half of it. Install-PSResource is what makes the cost
+# of keeping them acceptable.
+#
+# Retired modules are opt-in (-IncludeRetired): Azure AD Graph is decommissioned,
+# so most MSOnline / AzureADPreview cmdlets fail at runtime. Installing them by
+# default spent minutes on tooling that is already broken.
 $PSModules = [ordered]@{
     'AADInternals'     = @{ Retired = $false }
     'Az'               = @{ Retired = $false; Prefix = 'Az*' }
@@ -373,8 +387,100 @@ function Remove-DefenderExclusionComponent {
 }
 
 # ============================================================================
+# Gallery installer
+# ============================================================================
+
+$script:GalleryInstaller = $null
+
+function Initialize-GalleryInstaller {
+    <#
+        PowerShellGet v2's Install-Module resolves dependencies serially through
+        PackageManagement, so a default run is ~141 sequential module installs
+        (Az pulls 102, Microsoft.Graph 39) behind a progress bar that
+        $ProgressPreference cannot suppress - PackageManagement writes it from a
+        child runspace that never sees this scope's preference.
+
+        PSResourceGet's Install-PSResource does the same work substantially
+        faster and quietly, so prefer it and bootstrap it when it is missing.
+        Falls back to Install-Module if the bootstrap fails, since a slow
+        install is better than no install.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '',
+        Justification = 'Internal helper. Mutations are gated by Invoke-ComponentAction.')]
+    param()
+
+    if ($script:GalleryInstaller) { return $script:GalleryInstaller }
+
+    if (-not (Get-PackageProvider -Name NuGet -ErrorAction SilentlyContinue)) {
+        Write-Status 'Installing NuGet provider...'
+        Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force | Out-Null
+    }
+
+    if (-not (Test-CommandExists 'Install-PSResource')) {
+        Write-Status 'Installing PSResourceGet (much faster module installs)...'
+        try {
+            Install-Module -Name Microsoft.PowerShell.PSResourceGet -Force -AllowClobber `
+                           -Scope AllUsers -ErrorAction Stop
+            Import-Module Microsoft.PowerShell.PSResourceGet -ErrorAction Stop
+        }
+        catch {
+            Write-Status "PSResourceGet unavailable ($($_.Exception.Message)); using Install-Module" -Type Warning
+        }
+    }
+
+    if (Test-CommandExists 'Install-PSResource') {
+        try { Set-PSResourceRepository -Name PSGallery -Trusted -ErrorAction Stop }
+        catch { Write-Verbose "Could not mark PSGallery trusted: $($_.Exception.Message)" }
+        $script:GalleryInstaller = 'PSResource'
+    }
+    else {
+        if ((Get-PSRepository -Name PSGallery).InstallationPolicy -ne 'Trusted') {
+            Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+        }
+        $script:GalleryInstaller = 'PowerShellGet'
+    }
+
+    Write-Status "Module installer: $script:GalleryInstaller" -Type Info
+    return $script:GalleryInstaller
+}
+
+function Install-GalleryModule {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '',
+        Justification = 'Internal helper. Mutations are gated by Invoke-ComponentAction.')]
+    param([string]$Name)
+
+    if ((Initialize-GalleryInstaller) -eq 'PSResource') {
+        Install-PSResource -Name $Name -Scope AllUsers -TrustRepository -Reinstall:$Force -ErrorAction Stop
+    }
+    else {
+        Install-Module -Name $Name -Force -AllowClobber -Scope AllUsers -ErrorAction Stop
+    }
+}
+
+function Uninstall-GalleryModule {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '',
+        Justification = 'Internal helper. Mutations are gated by Invoke-ComponentAction.')]
+    param([string]$Name)
+
+    # Whichever installer was used, the folder sweep in Remove-PSModulesComponent
+    # is the backstop - PSResourceGet and PowerShellGet do not read each other's
+    # install metadata, so the matching uninstall cmdlet may not find the module.
+    if (Test-CommandExists 'Uninstall-PSResource') {
+        Uninstall-PSResource -Name $Name -SkipDependencyCheck -ErrorAction Stop
+    }
+    else {
+        Uninstall-Module -Name $Name -AllVersions -Force -ErrorAction Stop
+    }
+}
+
+# ============================================================================
 # Component: PSModules
 # ============================================================================
+
+function Get-SelectedPSModules {
+    # Retired modules are opt-in; see the note on $PSModules.
+    return @($PSModules.Keys | Where-Object { $IncludeRetired -or -not $PSModules[$_].Retired })
+}
 
 function Get-ModuleFamily {
     param([string]$Name)
@@ -385,27 +491,27 @@ function Get-ModuleFamily {
 }
 
 function Test-PSModulesComponent {
+    $selected = @(Get-SelectedPSModules)
     $found = @(); $missing = @()
-    foreach ($name in $PSModules.Keys) {
+    foreach ($name in $selected) {
         if (@(Get-ModuleFamily -Name $name).Count -gt 0) { $found += $name } else { $missing += $name }
     }
     return [pscustomobject]@{
         Present = $missing.Count -eq 0
-        Detail  = "$($found.Count)/$($PSModules.Count) present" + $(if ($missing) { "; missing: $($missing -join ', ')" } else { '' })
+        Detail  = "$($found.Count)/$($selected.Count) present" + $(if ($missing) { "; missing: $($missing -join ', ')" } else { '' })
     }
 }
 
 function Install-PSModulesComponent {
-    if (-not (Get-PackageProvider -Name NuGet -ErrorAction SilentlyContinue)) {
-        Write-Status 'Installing NuGet provider...'
-        Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force | Out-Null
-    }
-    if ((Get-PSRepository -Name PSGallery).InstallationPolicy -ne 'Trusted') {
-        Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+    $null = Initialize-GalleryInstaller
+
+    $skipped = @($PSModules.Keys | Where-Object { $_ -notin (Get-SelectedPSModules) })
+    if ($skipped) {
+        Write-Status "Skipping retired module(s): $($skipped -join ', ') (use -IncludeRetired)" -Type Info
     }
 
     $installed = @()
-    foreach ($name in $PSModules.Keys) {
+    foreach ($name in (Get-SelectedPSModules)) {
         $spec = $PSModules[$name]
         $existing = Get-Module -ListAvailable -Name $name -ErrorAction SilentlyContinue | Select-Object -First 1
 
@@ -415,7 +521,8 @@ function Install-PSModulesComponent {
         }
 
         try {
-            Install-Module -Name $name -Force -AllowClobber -Scope AllUsers -ErrorAction Stop
+            Write-Status "Installing $name..."
+            Install-GalleryModule -Name $name
             $verify = Get-Module -ListAvailable -Name $name -ErrorAction SilentlyContinue | Select-Object -First 1
             if ($verify) {
                 Write-Status "$name installed (v$($verify.Version))" -Type Success
@@ -459,7 +566,7 @@ function Remove-PSModulesComponent {
 
         $removed = 0
         foreach ($mod in $family) {
-            try { Uninstall-Module -Name $mod -AllVersions -Force -ErrorAction Stop; $removed++ }
+            try { Uninstall-GalleryModule -Name $mod; $removed++ }
             catch { Write-Verbose "Uninstall-Module failed for $mod; folder cleanup below will handle it" }
         }
 
